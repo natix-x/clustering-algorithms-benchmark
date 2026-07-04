@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.venv/
+venv/
+.pytest_cache/
+# transient cluster run outputs (configs/logs/sbatch generated per submission)
+local_testing/results/
+
+# experiment_configs: commit only the two illustrative examples (spark + flink).
+# Real experiment matrices are kept locally, not committed.
+experiment_configs/*.yaml
+!experiment_configs/spark_kmeans_example.yaml
+!experiment_configs/flink_kmeans_example.yaml

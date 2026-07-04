@@ -1,0 +1,29 @@
+[project]
+name = "clustering-algorithms-benchmark"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.0",
+]
+
+# Optional extras for the analysis notebooks/scripts (not needed to generate jobs).
+[project.optional-dependencies]
+analysis = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+]
+
+# Dev tools (PEP 735 dependency group); installed by default with `uv sync`.
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["python"]
+testpaths = ["tests"]
