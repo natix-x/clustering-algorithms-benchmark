@@ -10,23 +10,77 @@ live in the per-engine repos:
 
 ## How it fits together
 
-```
-experiment_configs/*.yaml   (matrix: nodes × resources × algorithm × dataset × reps)
-        │
-        ▼  run_experiments.py --framework {spark|flink}
-per-run <runId>.json  ──────────────────────────────►  engine fat jar  --config <runId>.json
-   (validates against                                       │  (in the engine repo)
-    contract/run_config.schema.json)                        ▼
-                                            <runId>.json result (validates against
-                                             contract/run_result.schema.json)
-                                                            │
-                                                            ▼
-                                                    analysis/  (pandas, plots)
+One experiment-matrix YAML fans out into many independent per-run jobs. The harness
+is engine-agnostic; `--framework` picks a **Launcher** (Strategy) that owns every
+Spark/Flink-specific detail.
+
+```mermaid
+flowchart TB
+    YAML["experiment_configs/&lt;name&gt;.yaml<br/>experiment_matrix: nodes × resources × algorithms × datasets (+ repetitions)"]
+
+    subgraph HARNESS["HARNESS (Python) — run_experiments.py --framework {spark|flink} [--submit]"]
+        direction TB
+        S1["1. launchers.get_launcher(fw)<br/>dict factory → SparkLauncher / FlinkLauncher (Strategy)"]
+        S2["2. validate_yaml_config_file(...)<br/>yaml_validator: INPUT validation<br/>resource_keys come from chosen launcher (SPARK_/FLINK_*)"]
+        S3["3. generate_experiments(doc)<br/>cartesian product → list[Experiment]<br/>nodes×resources×algorithms×datasets×reps, each a unique runId"]
+        S4["4. JobWriter(launcher)<br/>Strategy Context, delegates to launcher"]
+        S4a["write_configs → launcher.build_run_config() per run<br/>derives parallelism (= total slots/cores), injects numPartitions<br/>writes &lt;configs_dir&gt;/&lt;runId&gt;.json (the CONTRACT shape)"]
+        S4b["write_sbatch_files → launcher.render_sbatch() per run<br/>fills sbatch_templates/{spark,flink}_sbatch_template.py<br/>writes &lt;out&gt;/sbatch/&lt;runId&gt;.sbatch + submit_all.sh"]
+        S5["5. --submit → bash submit_all.sh → sbatch &lt;runId&gt;.sbatch (per run)"]
+
+        S1 --> S2 --> S3 --> S4
+        S4 --> S4a
+        S4 --> S4b
+        S4a --> S5
+        S4b --> S5
+    end
+
+    YAML --> HARNESS
+
+    subgraph SLURM["each &lt;runId&gt;.sbatch (SLURM job)"]
+        direction TB
+        SB1["bootstraps a throwaway standalone cluster ON the allocation"]
+        SB2["Spark: start Master + srun Workers → spark-submit --config &lt;runId&gt;.json"]
+        SB3["Flink: start JobManager + srun TaskManagers → flink run --config ..."]
+        SB4["trap cleanup on EXIT/INT/TERM → tear down cluster, rm scratch"]
+        SB1 --> SB2
+        SB1 --> SB3
+        SB2 --> SB4
+        SB3 --> SB4
+    end
+
+    HARNESS -- "sbatch (SLURM)" --> SLURM
+
+    JAR["engine fat jar<br/>(lives in the engine repo)"]
+    SLURM --> JAR
+
+    RESULT["&lt;output_dir&gt;/&lt;runId&gt;.json (result)<br/>validates against contract/run_result.schema.json"]
+    JAR --> RESULT
+
+    ANALYSIS["analysis/ (pandas, plots)"]
+    RESULT --> ANALYSIS
+
 ```
 
-The harness never references Spark or Flink directly — `--framework` selects a
-**Launcher** that knows how to size resources, write the per-run config, and render
-the cluster-bootstrap sbatch. Adding an engine = one `Launcher` subclass.
+### The contract (why this stays decoupled)
+
+`contract/*.schema.json` is the single, language-neutral spec exchanged between the
+three repos. The harness **produces** `run_config` JSON; each engine jar **reads** it
+and **produces** `run_result` JSON:
+
+```
+                       contract/run_config.schema.json  ◄─ produced by harness
+                                    ▲                       (checked in tests/)
+   harness (Python) ───────────────┤
+                                    ▼
+   spark-clustering-algorithms (Scala)  ──►  contract/run_result.schema.json
+   flink-clustering-algorithms (Java)   ──►         ▲ produced by each engine jar
+                                                    └─ mirrored by hand in each repo
+```
+
+No shared JVM library: each engine keeps its own small parser and conforms to the
+schema. Adding an engine = one `Launcher` subclass + its resource-key tuple + one
+`_LAUNCHERS` entry — nothing in the harness core changes.
 
 ## Layout
 
@@ -66,13 +120,6 @@ args to the Python entrypoint):
 
 # or just generate (prints the submit_all.sh path to run later):
 ./slurm_run.sh -f spark experiment_configs/spark_kmeans_example.yaml
-```
-
-Equivalent without the wrapper:
-
-```bash
-PYTHONPATH=python python3 -m slurm_experiments_orchestrator.run_experiments \
-    --framework flink experiment_configs/flink_kmeans_example.yaml --submit
 ```
 
 Input YAML is validated up front (`yaml_validator`). Generated per-run configs are
