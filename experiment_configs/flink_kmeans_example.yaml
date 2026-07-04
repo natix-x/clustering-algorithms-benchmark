@@ -1,0 +1,35 @@
+name: flink-kmeans-001
+
+configs_dir: "$SCRATCH/clustering-runs/configs"
+output_dir: "$SCRATCH/clustering-runs/results"
+log_dir: "$SCRATCH/clustering-runs/logs"
+jar_path: "$SCRATCH/jars/flink-clustering-benchmark.jar"
+
+sbatch_defaults:
+  account: "plgclusteringbigdata-cpu"
+  partition: "plgrid"
+  walltime: "00:10:00"
+  java_module: "java/11.0.2" # same Java as in Spark 3.3 -> consistent comparison
+  flink_home: "$SCRATCH/flink-1.17.1"  # self installed Flink 1.17.1 + reporter jar in lib/
+
+evaluation_defaults:
+  metrics: ["silhouette", "clusterSizes", "noiseFraction"]
+  sampleSize: 10000
+  seed: 42
+
+# engine_conf_defaults: {}        # optional Flink config (taskmanager/network/...)
+
+# Flink parallelism is derived by the harness = nodes * tm_per_node * cpus_per_task
+# (total slots), so it always fits the allocation. Not a YAML knob.
+matrix:
+  nodes: [2]
+  resources:
+    # tm_per_node = TaskManagers/node, cpus_per_task = slots/TM. Flink mem granted
+    # explicitly in GB: tm_mem_gb (TaskManager process), jm_mem_gb (JobManager).
+    - {cpus_per_task: 4, tm_per_node: 1, mem: "48G", tm_mem_gb: 41, jm_mem_gb: 1}
+  algorithm:
+    - {name: kmeans, params: {k: 10, maxIter: 10, distance: euclidean}}
+  dataset:
+    - {type: synthetic, params: {numPoints: 100000}}
+
+repetitions: 1
