@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/natix-x/clustering-algorithms-benchmark/contract/run_config.schema.json",
+  "title": "RunConfig",
+  "description": "Input contract for a single benchmark run. Engine-neutral: both the Spark and Flink jars read this exact shape via their own parser. Mirrors clustering.benchmark.config.RunConfig (Scala). 'engineConf' is the neutral name; the Spark jar currently reads/writes it as 'sparkConf' (both accepted - see contract/README.md).",
+  "type": "object",
+  "required": ["runId", "dataset", "algorithm", "evaluation"],
+  "additionalProperties": false,
+  "properties": {
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Globally unique id; becomes the result filename stem (<runId>.json)."
+    },
+    "profile": {
+      "type": ["string", "null"],
+      "enum": ["local", "ares", null],
+      "description": "Cluster profile. If absent, the engine auto-detects from env (e.g. SLURM_JOB_ID)."
+    },
+    "dataset": {
+      "type": "object",
+      "required": ["type", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "DataSource type, e.g. 'synthetic' | 'parquet' | 'csv'. Resolved by each engine's DataSource registry."
+        },
+        "params": {
+          "type": "object",
+          "description": "Free-form source params (e.g. numPoints, numPartitions, seed, path). Each engine parses what it needs."
+        }
+      }
+    },
+    "algorithm": {
+      "type": "object",
+      "required": ["name", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Algorithm name, e.g. 'kmeans' | 'pam' | 'fastpam' | 'clara' | 'dbscan' | 'griddbscan'. Resolved by each engine's algorithm registry."
+        },
+        "params": {
+          "type": "object",
+          "description": "Free-form algorithm params (e.g. k, maxIter, distance, eps, minPts, seed)."
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["silhouette", "clusterSizes", "noiseFraction"] },
+          "description": "Which post-fit metrics to compute."
+        },
+        "sampleSize": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Optional cap for O(n^2) metrics like silhouette. null/absent = full dataset."
+        },
+        "seed": {
+          "type": "integer",
+          "description": "RNG seed for evaluation sampling. Defaults to 42 in the engine if absent."
+        }
+      }
+    },
+    "engineConf": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Extra engine configuration entries set before session start (Spark: SparkConf; Flink: execution config). Neutral name."
+    },
+    "sparkConf": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "DEPRECATED alias of engineConf, accepted by the Spark jar. Prefer engineConf for new configs."
+    },
+    "outputDir": {
+      "type": ["string", "null"],
+      "description": "Overrides the profile's default output directory when present."
+    },
+    "experimentMetadata": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Free-form key->value tags describing the experiment setup (nodes, cores, memory, walltime, module, ...). Written verbatim into the result for analysis."
+    }
+  }
+}
