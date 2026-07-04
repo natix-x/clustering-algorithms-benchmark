@@ -19,8 +19,8 @@ class FlinkLauncher(Launcher):
         self, experiment: Experiment, output_dir: str, yaml_config: dict
     ) -> dict:
         engine_conf = dict(yaml_config.get("engine_conf_defaults", yaml_config.get("flink_conf_defaults", {})))
-        evaluation  = dict(yaml_config.get("evaluation_defaults", {}))
-        sbatch_def  = yaml_config.get("sbatch_defaults", {})
+        evaluation  = dict(yaml_config.get("evaluation_config", {}))
+        sbatch_def  = yaml_config.get("sbatch_config", {})
         res         = experiment.cell["resources"]
 
         tms_per_node = int(res["tm_per_node"])
@@ -46,7 +46,7 @@ class FlinkLauncher(Launcher):
             "flink_module":          str(sbatch_def.get("flink_module", "")),
         }
 
-        dataset = dict(experiment.cell["dataset"])
+        dataset = dict(experiment.cell["datasets"])
         dataset["params"] = {**dataset.get("params", {}), "numPartitions": parallelism}
 
         return {
@@ -54,7 +54,7 @@ class FlinkLauncher(Launcher):
             "profile":            "ares",
             "outputDir":          output_dir,
             "dataset":            dataset,
-            "algorithm":          dict(experiment.cell["algorithm"]),
+            "algorithm":          dict(experiment.cell["algorithms"]),
             "evaluation":         evaluation,
             "engineConf":         engine_conf,
             "experimentMetadata": experiment_metadata,
@@ -68,7 +68,7 @@ class FlinkLauncher(Launcher):
         output_dir: str,
         yaml_config: dict,
     ) -> str:
-        sbatch_def = yaml_config.get("sbatch_defaults", {})
+        sbatch_def = yaml_config.get("sbatch_config", {})
         non_resource_defaults = {
             k: v for k, v in sbatch_def.items()
             if k not in self.resource_keys

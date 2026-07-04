@@ -31,24 +31,24 @@ def validate_yaml_config_file(
     if missing:
         raise KeyError(f"Missing top-level keys in YAML: {missing}")
 
-    matrix = parsed_yaml_config_file["matrix"]
+    matrix = parsed_yaml_config_file["experiment_matrix"]
 
     missing_matrix = [k for k in REQUIRED_MATRIX_KEYS if k not in matrix]
     if missing_matrix:
         raise KeyError(
-            f"Missing required keys in 'matrix': {missing_matrix}. "
+            f"Missing required keys in 'experiment_matrix': {missing_matrix}. "
             f"Required: {list(REQUIRED_MATRIX_KEYS)}"
         )
 
     if "repetitions" in matrix:
         raise ValueError(
-            "Repetitions should be top-level key in YAML, not in 'matrix'."
+            "Repetitions should be top-level key in YAML, not in 'experiment_matrix'."
         )
 
     for key, values in matrix.items():
         if not isinstance(values, list) or len(values) == 0:
             raise ValueError(
-                f"Matrix['{key}'] must be a non-empty list, "
+                f"experiment_matrix['{key}'] must be a non-empty list, "
                 f"got: {type(values).__name__} = {values!r}"
             )
 
@@ -57,51 +57,51 @@ def validate_yaml_config_file(
         raise ValueError("Repetitions must be a positive integer.")
 
     _validate_resources(parsed_yaml_config_file, resource_keys)
-    _validate_matrix_entries(matrix["dataset"], "dataset", REQUIRED_DATASET_KEYS)
-    _validate_matrix_entries(matrix["algorithm"], "algorithm", REQUIRED_ALGORITHM_KEYS)
+    _validate_matrix_entries(matrix["datasets"], "datasets", REQUIRED_DATASET_KEYS)
+    _validate_matrix_entries(matrix["algorithms"], "algorithms", REQUIRED_ALGORITHM_KEYS)
     logger.debug("YAML config passed validation.")
 
 
 def _validate_matrix_entries(entries: list, axis: str, required_keys: tuple[str, ...]) -> None:
-    """Each matrix.<axis> entry must be a dict defining all `required_keys`, with a
+    """Each experiment_matrix.<axis> entry must be a dict defining all `required_keys`, with a
     dict `params`. Caught here (input) instead of later at run-config schema time."""
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise ValueError(
-                f"matrix.{axis}[{i}] must be a dict, got {type(entry).__name__}"
+                f"experiment_matrix.{axis}[{i}] must be a dict, got {type(entry).__name__}"
             )
         missing = [k for k in required_keys if k not in entry]
         if missing:
             raise KeyError(
-                f"matrix.{axis}[{i}] missing keys: {missing}. "
+                f"experiment_matrix.{axis}[{i}] missing keys: {missing}. "
                 f"Each entry must define: {list(required_keys)}"
             )
         if not isinstance(entry["params"], dict):
             raise ValueError(
-                f"matrix.{axis}[{i}].params must be a dict, "
+                f"experiment_matrix.{axis}[{i}].params must be a dict, "
                 f"got {type(entry['params']).__name__}"
             )
 
 
 def _validate_resources(parsed_yaml_config_file: dict, resource_keys: tuple[str, ...]) -> None:
-    """`matrix.resources` must exist and every entry must define all `resource_keys`."""
-    matrix = parsed_yaml_config_file["matrix"]
+    """`experiment_matrix.resources` must exist and every entry must define all `resource_keys`."""
+    matrix = parsed_yaml_config_file["experiment_matrix"]
 
     if "resources" not in matrix:
-        raise KeyError("matrix.resources is required.")
+        raise KeyError("experiment_matrix.resources is required.")
 
     for i, entry in enumerate(matrix["resources"]):
         if not isinstance(entry, dict):
             raise ValueError(
-                f"matrix.resources[{i}] must be a dict, got {type(entry).__name__}"
+                f"experiment_matrix.resources[{i}] must be a dict, got {type(entry).__name__}"
             )
         missing = [k for k in resource_keys if k not in entry]
         if missing:
             raise KeyError(
-                f"matrix.resources[{i}] missing keys: {missing}. "
+                f"experiment_matrix.resources[{i}] missing keys: {missing}. "
                 f"Each entry must explicitly define: {list(resource_keys)}"
             )
-        _validate_resource_entry(entry, f"matrix.resources[{i}]", resource_keys)
+        _validate_resource_entry(entry, f"experiment_matrix.resources[{i}]", resource_keys)
 
 
 def _validate_resource_entry(entry: dict, source: str, resource_keys: tuple[str, ...]) -> None:

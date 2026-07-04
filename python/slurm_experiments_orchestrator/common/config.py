@@ -1,7 +1,7 @@
-REQUIRED_KEYS = ("name", "configs_dir", "log_dir", "output_dir", "jar_path", "matrix")
-REQUIRED_MATRIX_KEYS = ("nodes", "algorithm", "dataset")
+REQUIRED_KEYS = ("name", "configs_dir", "log_dir", "output_dir", "jar_path", "experiment_matrix")
+REQUIRED_MATRIX_KEYS = ("nodes", "algorithms", "datasets")
 
-#: Keys each matrix.dataset / matrix.algorithm entry must define (mirrors the run-config
+#: Keys each experiment_matrix.datasets / .algorithms entry must define (mirrors the run-config
 #: contract: dataset {type, params}, algorithm {name, params}).
 REQUIRED_DATASET_KEYS = ("type", "params")
 REQUIRED_ALGORITHM_KEYS = ("name", "params")

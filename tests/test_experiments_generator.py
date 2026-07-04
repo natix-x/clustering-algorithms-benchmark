@@ -17,8 +17,8 @@ def test_single_cell_one_experiment(spark_yaml):
 
 def test_cartesian_product_count(spark_yaml):
     # 2 nodes x 2 algorithms x 1 dataset x 1 resources = 4 cells
-    spark_yaml["matrix"]["nodes"] = [1, 2]
-    spark_yaml["matrix"]["algorithm"] = [
+    spark_yaml["experiment_matrix"]["nodes"] = [1, 2]
+    spark_yaml["experiment_matrix"]["algorithms"] = [
         {"name": "kmeans", "params": {"k": 3}},
         {"name": "dbscan", "params": {"eps": 0.5}},
     ]
@@ -33,7 +33,7 @@ def test_repetitions_multiply(spark_yaml):
 
 
 def test_run_id_shape_and_uniqueness(spark_yaml):
-    spark_yaml["matrix"]["nodes"] = [1, 2]
+    spark_yaml["experiment_matrix"]["nodes"] = [1, 2]
     exps = generate_experiments(spark_yaml, 1)
     ids = [e.run_id for e in exps]
     assert len(set(ids)) == len(ids)  # unique
@@ -50,6 +50,6 @@ def test_hash_is_deterministic(spark_yaml):
 def test_cell_carries_axis_values(spark_yaml):
     exp = generate_experiments(spark_yaml, 1)[0]
     assert exp.nodes == 1
-    assert exp.cell["algorithm"]["name"] == "kmeans"
-    assert exp.cell["dataset"]["type"] == "synthetic"
+    assert exp.cell["algorithms"]["name"] == "kmeans"
+    assert exp.cell["datasets"]["type"] == "synthetic"
     assert "resources" in exp.cell

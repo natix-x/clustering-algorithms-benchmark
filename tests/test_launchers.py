@@ -69,7 +69,7 @@ def test_build_does_not_mutate_original_dataset(spark_yaml):
     exp = generate_experiments(spark_yaml, 1)[0]
     launchers.get_launcher("spark").build_run_config(exp, "/tmp/o", spark_yaml)
     # numPartitions injected into a copy, not the source cell
-    assert "numPartitions" not in exp.cell["dataset"]["params"]
+    assert "numPartitions" not in exp.cell["datasets"]["params"]
 
 
 # --- render_sbatch ---

@@ -5,7 +5,7 @@ import copy
 import pytest
 
 
-def _base_yaml(matrix: dict, sbatch_defaults: dict) -> dict:
+def _base_yaml(matrix: dict, sbatch_config: dict) -> dict:
     return {
         "name": "t",
         "configs_dir": "c",
@@ -13,8 +13,8 @@ def _base_yaml(matrix: dict, sbatch_defaults: dict) -> dict:
         "output_dir": "o",
         "jar_path": "j",
         "repetitions": 1,
-        "sbatch_defaults": sbatch_defaults,
-        "matrix": matrix,
+        "sbatch_config": sbatch_config,
+        "experiment_matrix": matrix,
     }
 
 
@@ -32,16 +32,16 @@ _SPARK_MATRIX = {
     "nodes": [1],
     "resources": [{"cpus_per_task": 4, "executors_per_node": 1, "mem": "8G",
                    "driver_mem_gb": 2, "worker_mem_gb": 5}],
-    "algorithm": [{"name": "kmeans", "params": {"k": 3}}],
-    "dataset": [{"type": "synthetic", "params": {"numPoints": 100}}],
+    "algorithms": [{"name": "kmeans", "params": {"k": 3}}],
+    "datasets": [{"type": "synthetic", "params": {"numPoints": 100}}],
 }
 
 _FLINK_MATRIX = {
     "nodes": [1],
     "resources": [{"cpus_per_task": 4, "tm_per_node": 1, "mem": "8G",
                    "tm_mem_gb": 6, "jm_mem_gb": 1}],
-    "algorithm": [{"name": "kmeans", "params": {"k": 3}}],
-    "dataset": [{"type": "synthetic", "params": {"numPoints": 100}}],
+    "algorithms": [{"name": "kmeans", "params": {"k": 3}}],
+    "datasets": [{"type": "synthetic", "params": {"numPoints": 100}}],
 }
 
 

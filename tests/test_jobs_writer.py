@@ -15,7 +15,7 @@ def _writer(framework):
 
 
 def test_write_configs_creates_one_json_per_experiment(spark_yaml, tmp_path):
-    spark_yaml["matrix"]["nodes"] = [1, 2]
+    spark_yaml["experiment_matrix"]["nodes"] = [1, 2]
     exps = generate_experiments(spark_yaml, 1)
     _writer("spark").write_configs(exps, str(tmp_path), str(tmp_path), spark_yaml)
 

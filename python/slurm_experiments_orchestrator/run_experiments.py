@@ -27,7 +27,7 @@ def main() -> None:
         choices=launchers.available(),
         help="Execution engine to target.",
     )
-    parser.add_argument("matrix", type=Path, help="Path to the YAML matrix file.")
+    parser.add_argument("matrix", type=Path, help="Path to the experiment-matrix YAML file.")
     parser.add_argument(
         "--submit",
         action="store_true",

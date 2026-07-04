@@ -23,7 +23,7 @@ def generate_experiments(
     parsed_yaml_config_file: dict,
     repetitions: int,
 ) -> list[Experiment]:
-    matrix = dict(parsed_yaml_config_file["matrix"])
+    matrix = dict(parsed_yaml_config_file["experiment_matrix"])
 
     keys   = list(matrix)
     name   = parsed_yaml_config_file["name"]

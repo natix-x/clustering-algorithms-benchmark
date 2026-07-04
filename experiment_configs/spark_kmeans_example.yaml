@@ -6,31 +6,36 @@ log_dir: "$SCRATCH/clustering-runs/logs"
 jar_path: "$SCRATCH/jars/spark-clustering-benchmark.jar"
 
 # Non-resource SLURM/module defaults shared by every run.
-# Per-experiment CPU/memory/executor allocation lives in matrix.resources below.
-sbatch_defaults:
+sbatch_config:
   account: "plgclusteringbigdata-cpu"
   partition: "plgrid"
   walltime: "00:10:00"
   spark_module: "spark/3.3.2-hadoop-3.2-java-11"  # Java 11 -> consistent with Flink
 
-evaluation_defaults:
+evaluation_config:
   metrics: ["silhouette", "clusterSizes", "noiseFraction"]
   sampleSize: 10000
   seed: 42
 
-# spark_conf_defaults: {}          # optional extra SparkConf entries (Kryo is always on)
+# spark_conf_defaults: {}          # optional extra SparkConf entries
 
-# Partition count is derived by the harness = nodes * executors_per_node * executor_cores
-# (total cores), so it always fills the allocation. Not a YAML knob.
-matrix:
+experiment_matrix:
   nodes: [2]
   resources:
-    # Resources granted EXPLICITLY (no derivation from mem). Each entry defines the
-    # full Spark split: driver + worker pool; executor cores/heap are packed from these.
-    - {cpus_per_task: 4, executors_per_node: 1, mem: "48G", driver_mem_gb: 4, worker_mem_gb: 41}
-  algorithm:
-    - {name: kmeans, params: {k: 10, maxIter: 10, distance: euclidean}}
-  dataset:
-    - {type: synthetic, params: {numPoints: 100000}}
+    - cpus_per_task: 4
+      executors_per_node: 1
+      mem: "48G"
+      driver_mem_gb: 4
+      worker_mem_gb: 41
+  algorithms:
+    - name: kmeans
+      params:
+        k: 10
+        maxIter: 10
+        distance: euclidean
+  datasets:
+    - type: synthetic
+      params:
+        numPoints: 100000
 
 repetitions: 1

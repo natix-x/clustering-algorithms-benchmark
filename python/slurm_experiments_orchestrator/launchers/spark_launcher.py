@@ -33,8 +33,8 @@ class SparkLauncher(Launcher):
         self, experiment: Experiment, output_dir: str, yaml_config: dict
     ) -> dict:
         spark_conf      = dict(yaml_config.get("spark_conf_defaults", {}))
-        evaluation      = dict(yaml_config.get("evaluation_defaults", {}))
-        sbatch_defaults = yaml_config.get("sbatch_defaults", {})
+        evaluation      = dict(yaml_config.get("evaluation_config", {}))
+        sbatch_config = yaml_config.get("sbatch_config", {})
 
         res       = experiment.cell["resources"]
         spark_res = _resolve_resources(experiment)
@@ -52,9 +52,9 @@ class SparkLauncher(Launcher):
             "executors_per_node": str(res["executors_per_node"]),
             "total_executors":    str(experiment.nodes * int(res["executors_per_node"])),
             "mem":                str(res["mem"]),
-            "walltime":           str(sbatch_defaults.get("walltime", "")),
-            "partition":          str(sbatch_defaults.get("partition", "")),
-            "spark_module":       str(sbatch_defaults.get("spark_module", "")),
+            "walltime":           str(sbatch_config.get("walltime", "")),
+            "partition":          str(sbatch_config.get("partition", "")),
+            "spark_module":       str(sbatch_config.get("spark_module", "")),
             "worker_mem_gb":      str(spark_res.worker_pool_gb),
             "executor_mem_gb":    str(spark_res.executor_gb),
             "executor_overhead_mb": str(spark_res.executor_overhead_mb),
@@ -66,7 +66,7 @@ class SparkLauncher(Launcher):
 
         # Inject the derived partition count into the dataset params so the Spark job
         # reads it (contract: dataset.params.numPartitions).
-        dataset = dict(experiment.cell["dataset"])
+        dataset = dict(experiment.cell["datasets"])
         dataset["params"] = {**dataset.get("params", {}), "numPartitions": num_partitions}
 
         return {
@@ -74,7 +74,7 @@ class SparkLauncher(Launcher):
             "profile":            "ares",
             "outputDir":          output_dir,
             "dataset":            dataset,
-            "algorithm":          dict(experiment.cell["algorithm"]),
+            "algorithm":          dict(experiment.cell["algorithms"]),
             "evaluation":         evaluation,
             "sparkConf":          spark_conf,
             "experimentMetadata": experiment_metadata,
@@ -88,9 +88,9 @@ class SparkLauncher(Launcher):
         output_dir: str,
         yaml_config: dict,
     ) -> str:
-        sbatch_defaults = yaml_config.get("sbatch_defaults", {})
+        sbatch_config = yaml_config.get("sbatch_config", {})
         non_resource_defaults = {
-            k: v for k, v in sbatch_defaults.items()
+            k: v for k, v in sbatch_config.items()
             if k not in ("executors_per_node", "cpus_per_task", "mem")
         }
         jar       = os.path.expandvars(yaml_config["jar_path"])
