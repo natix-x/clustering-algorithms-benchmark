@@ -14,52 +14,111 @@ One experiment-matrix YAML fans out into many independent per-run jobs. The harn
 is engine-agnostic; `--framework` picks a **Launcher** (Strategy) that owns every
 Spark/Flink-specific detail.
 
+### Flowchart:
+
 ```mermaid
+---
+config:
+  layout: dagre
+---
 flowchart TB
-    YAML["experiment_configs/&lt;name&gt;.yaml<br/>experiment_matrix: nodes × resources × algorithms × datasets (+ repetitions)"]
+    START_DOT((( ))) --> YAML
+    
+    YAML["experiment_configs/&lt;name&gt;.yaml<br>nodes × resources × algorithms × datasets × repetitions"]
+    START["START: slurm_experiments_orchestrator.run_experiments.py --framework {spark|flink} [--submit]"]
+    
+    InitSpark["inicjalizacja SparkLauncher"]
+    InitFlink["inicjalizacja FlinkLauncher"]
+    
+    V["validate_yaml_config_file(parsed_yaml_config, launcher)<br>walidacja pliku konfiguracyjnego YAML dla konkretnego frameworka"]
+    G["generate_experiments(parsed_yaml_config)<br>iloczyn kartezjański nodes × resources × algorithms × datasets × repetitions → list[Experiment], każdy z unikalnym runId"]
+    JW["inicjalizacja JobWriter(launcher)<br>Deleguje pracę do launchera"]
+    
+    WC["① write_configs(...) → launcher.build_run_config()<br>przygotowuje metadane eksperymentu (zasoby, ścieżki, konfiguracje itp.), Job Writer zapisuje je jako &lt;runId&gt;.json"]
+    WS["② write_sbatch_files(...) → launcher.render_sbatch()<br>wypełnia szablon sbatch metadanymi eksperymentu, zapisuje &lt;runId&gt;.sbatch + submit_all.sh, który pozwoli później uruchomić wszystkie joby na raz"]
+    
+    RUN["submit_all.sh → uruchamia sbatch &lt;runId&gt;.sbatch dla każdego eksperymentu"]
+    END_NODE["zwraca gotowe pliki"]
 
-    subgraph HARNESS["HARNESS (Python) — run_experiments.py --framework {spark|flink} [--submit]"]
-        direction TB
-        S1["1. launchers.get_launcher(fw)<br/>dict factory → SparkLauncher / FlinkLauncher (Strategy)"]
-        S2["2. validate_yaml_config_file(...)<br/>yaml_validator: INPUT validation<br/>resource_keys come from chosen launcher (SPARK_/FLINK_*)"]
-        S3["3. generate_experiments(doc)<br/>cartesian product → list[Experiment]<br/>nodes×resources×algorithms×datasets×reps, each a unique runId"]
-        S4["4. JobWriter(launcher)<br/>Strategy Context, delegates to launcher"]
-        S4a["write_configs → launcher.build_run_config() per run<br/>derives parallelism (= total slots/cores), injects numPartitions<br/>writes &lt;configs_dir&gt;/&lt;runId&gt;.json (the CONTRACT shape)"]
-        S4b["write_sbatch_files → launcher.render_sbatch() per run<br/>fills sbatch_templates/{spark,flink}_sbatch_template.py<br/>writes &lt;out&gt;/sbatch/&lt;runId&gt;.sbatch + submit_all.sh"]
-        S5["5. --submit → bash submit_all.sh → sbatch &lt;runId&gt;.sbatch (per run)"]
+    YAML --> START
+    
+    q1_choice{"--framework = ?"}
+    START --> q1_choice
+    q1_choice -- spark --> InitSpark
+    q1_choice -- flink --> InitFlink
+    
+    join_launchers(("launcher"))
+    InitSpark --> join_launchers
+    InitFlink --> join_launchers
+    
+    join_launchers --> V
+    
+    V --> G
+    G --> JW
+    JW --> WC
+    WC --> WS
+    
+    sub_choice{"--submit?"}
+    WS --> sub_choice
+    sub_choice -- tak --> RUN
+    sub_choice -- nie --> END_NODE
+    
+    END_DOT((( )))
+    RUN --> END_DOT
+    END_NODE --> END_DOT
+```
 
-        S1 --> S2 --> S3 --> S4
-        S4 --> S4a
-        S4 --> S4b
-        S4a --> S5
-        S4b --> S5
-    end
+### UML Class Diagram - Strategy Pattern
+```mermaid
+---
+config:
+  layout: dagre
+---
+flowchart TB
+    START_DOT((( ))) --> YAML
+    
+    YAML["experiment_configs/&lt;name&gt;.yaml<br>nodes × resources × algorithms × datasets × repetitions"]
+    START["START: slurm_experiments_orchestrator.run_experiments.py --framework {spark|flink} [--submit]"]
+    
+    InitSpark["inicjalizacja SparkLauncher"]
+    InitFlink["inicjalizacja FlinkLauncher"]
+    
+    V["validate_yaml_config_file(parsed_yaml_config, launcher)<br>walidacja pliku konfiguracyjnego YAML dla konkretnego frameworka"]
+    G["generate_experiments(parsed_yaml_config)<br>iloczyn kartezjański nodes × resources × algorithms × datasets × repetitions → list[Experiment], każdy z unikalnym runId"]
+    JW["inicjalizacja JobWriter(launcher)<br>Deleguje pracę do launchera"]
+    
+    WC["① write_configs(...) → launcher.build_run_config()<br>przygotowuje metadane eksperymentu (zasoby, ścieżki, konfiguracje itp.), Job Writer zapisuje je jako &lt;runId&gt;.json"]
+    WS["② write_sbatch_files(...) → launcher.render_sbatch()<br>wypełnia szablon sbatch metadanymi eksperymentu, zapisuje &lt;runId&gt;.sbatch + submit_all.sh, który pozwoli później uruchomić wszystkie joby na raz"]
+    
+    RUN["submit_all.sh → uruchamia sbatch &lt;runId&gt;.sbatch dla każdego eksperymentu"]
+    END_NODE["zwraca gotowe pliki"]
 
-    YAML --> HARNESS
-
-    subgraph SLURM["each &lt;runId&gt;.sbatch (SLURM job)"]
-        direction TB
-        SB1["bootstraps a throwaway standalone cluster ON the allocation"]
-        SB2["Spark: start Master + srun Workers → spark-submit --config &lt;runId&gt;.json"]
-        SB3["Flink: start JobManager + srun TaskManagers → flink run --config ..."]
-        SB4["trap cleanup on EXIT/INT/TERM → tear down cluster, rm scratch"]
-        SB1 --> SB2
-        SB1 --> SB3
-        SB2 --> SB4
-        SB3 --> SB4
-    end
-
-    HARNESS -- "sbatch (SLURM)" --> SLURM
-
-    JAR["engine fat jar<br/>(lives in the engine repo)"]
-    SLURM --> JAR
-
-    RESULT["&lt;output_dir&gt;/&lt;runId&gt;.json (result)<br/>validates against contract/run_result.schema.json"]
-    JAR --> RESULT
-
-    ANALYSIS["analysis/ (pandas, plots)"]
-    RESULT --> ANALYSIS
-
+    YAML --> START
+    
+    q1_choice{"--framework = ?"}
+    START --> q1_choice
+    q1_choice -- spark --> InitSpark
+    q1_choice -- flink --> InitFlink
+    
+    join_launchers(("launcher"))
+    InitSpark --> join_launchers
+    InitFlink --> join_launchers
+    
+    join_launchers --> V
+    
+    V --> G
+    G --> JW
+    JW --> WC
+    WC --> WS
+    
+    sub_choice{"--submit?"}
+    WS --> sub_choice
+    sub_choice -- tak --> RUN
+    sub_choice -- nie --> END_NODE
+    
+    END_DOT((( )))
+    RUN --> END_DOT
+    END_NODE --> END_DOT
 ```
 
 ### The contract (why this stays decoupled)

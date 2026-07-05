@@ -19,10 +19,8 @@ class Experiment:
     rep: int
 
 
-def generate_experiments(
-    parsed_yaml_config_file: dict,
-    repetitions: int,
-) -> list[Experiment]:
+def generate_experiments(parsed_yaml_config_file: dict) -> list[Experiment]:
+    repetitions = int(parsed_yaml_config_file["repetitions"])
     matrix = dict(parsed_yaml_config_file["experiment_matrix"])
 
     keys   = list(matrix)

@@ -10,7 +10,7 @@ from slurm_experiments_orchestrator.common.experiments_generator import (
 
 
 def test_single_cell_one_experiment(spark_yaml):
-    exps = generate_experiments(spark_yaml, 1)
+    exps = generate_experiments(spark_yaml)
     assert len(exps) == 1
     assert isinstance(exps[0], Experiment)
 
@@ -22,19 +22,20 @@ def test_cartesian_product_count(spark_yaml):
         {"name": "kmeans", "params": {"k": 3}},
         {"name": "dbscan", "params": {"eps": 0.5}},
     ]
-    exps = generate_experiments(spark_yaml, 1)
+    exps = generate_experiments(spark_yaml)
     assert len(exps) == 4
 
 
 def test_repetitions_multiply(spark_yaml):
-    exps = generate_experiments(spark_yaml, 3)
+    spark_yaml["repetitions"] = 3
+    exps = generate_experiments(spark_yaml)
     assert len(exps) == 3
     assert {e.rep for e in exps} == {0, 1, 2}
 
 
 def test_run_id_shape_and_uniqueness(spark_yaml):
     spark_yaml["experiment_matrix"]["nodes"] = [1, 2]
-    exps = generate_experiments(spark_yaml, 1)
+    exps = generate_experiments(spark_yaml)
     ids = [e.run_id for e in exps]
     assert len(set(ids)) == len(ids)  # unique
     for e in exps:
@@ -42,13 +43,13 @@ def test_run_id_shape_and_uniqueness(spark_yaml):
 
 
 def test_hash_is_deterministic(spark_yaml):
-    a = generate_experiments(spark_yaml, 1)[0]
-    b = generate_experiments(spark_yaml, 1)[0]
+    a = generate_experiments(spark_yaml)[0]
+    b = generate_experiments(spark_yaml)[0]
     assert a.run_id == b.run_id
 
 
 def test_cell_carries_axis_values(spark_yaml):
-    exp = generate_experiments(spark_yaml, 1)[0]
+    exp = generate_experiments(spark_yaml)[0]
     assert exp.nodes == 1
     assert exp.cell["algorithms"]["name"] == "kmeans"
     assert exp.cell["datasets"]["type"] == "synthetic"

@@ -16,7 +16,7 @@ def _writer(framework):
 
 def test_write_configs_creates_one_json_per_experiment(spark_yaml, tmp_path):
     spark_yaml["experiment_matrix"]["nodes"] = [1, 2]
-    exps = generate_experiments(spark_yaml, 1)
+    exps = generate_experiments(spark_yaml)
     _writer("spark").write_configs(exps, str(tmp_path), str(tmp_path), spark_yaml)
 
     files = sorted(tmp_path.glob("*.json"))
@@ -26,14 +26,14 @@ def test_write_configs_creates_one_json_per_experiment(spark_yaml, tmp_path):
 
 
 def test_written_config_is_valid_json_with_runid(spark_yaml, tmp_path):
-    exp = generate_experiments(spark_yaml, 1)[0]
+    exp = generate_experiments(spark_yaml)[0]
     _writer("spark").write_configs([exp], str(tmp_path), str(tmp_path), spark_yaml)
     cfg = json.loads((tmp_path / f"{exp.run_id}.json").read_text())
     assert cfg["runId"] == exp.run_id
 
 
 def test_write_sbatch_files_creates_scripts_and_submit_all(spark_yaml, tmp_path):
-    exps = generate_experiments(spark_yaml, 1)
+    exps = generate_experiments(spark_yaml)
     cfg_dir = tmp_path / "configs"
     cfg_dir.mkdir()
     sbatch_dir = tmp_path / "sbatch"
@@ -47,7 +47,7 @@ def test_write_sbatch_files_creates_scripts_and_submit_all(spark_yaml, tmp_path)
 
 
 def test_sbatch_scripts_are_executable(spark_yaml, tmp_path):
-    exp = generate_experiments(spark_yaml, 1)[0]
+    exp = generate_experiments(spark_yaml)[0]
     sbatch_dir = tmp_path / "sbatch"
     _writer("spark").write_sbatch_files(
         [exp], str(tmp_path), str(tmp_path), str(tmp_path), str(sbatch_dir), spark_yaml,
@@ -57,7 +57,7 @@ def test_sbatch_scripts_are_executable(spark_yaml, tmp_path):
 
 
 def test_submit_all_references_every_script(spark_yaml, tmp_path):
-    exps = generate_experiments(spark_yaml, 1)
+    exps = generate_experiments(spark_yaml)
     sbatch_dir = tmp_path / "sbatch"
     _writer("spark").write_sbatch_files(
         exps, str(tmp_path), str(tmp_path), str(tmp_path), str(sbatch_dir), spark_yaml,

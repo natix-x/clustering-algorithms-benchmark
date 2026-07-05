@@ -36,11 +36,11 @@ def test_schemas_are_valid():
 
 @pytest.mark.parametrize("framework", ["spark", "flink"])
 def test_build_run_config_matches_contract(framework, request):
-    doc = request.getfixturevalue(f"{framework}_yaml")
+    yaml_config = request.getfixturevalue(f"{framework}_yaml")
     launcher = launchers.get_launcher(framework)
     validator = jsonschema.Draft202012Validator(CONFIG_SCHEMA)
-    for experiment in generate_experiments(doc, 1):
-        cfg = launcher.build_run_config(experiment, "/tmp/out", doc)
+    for experiment in generate_experiments(yaml_config):
+        cfg = launcher.build_run_config(experiment, "/tmp/out", yaml_config)
         validator.validate(cfg)
 
 

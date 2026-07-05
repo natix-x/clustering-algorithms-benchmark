@@ -41,27 +41,27 @@ def main() -> None:
     logger.info(f"Framework: {args.framework}  |  matrix: {args.matrix}")
     launcher = launchers.get_launcher(args.framework)
 
-    yaml_config = yaml.safe_load(args.matrix.read_text())
-    validate_yaml_config_file(yaml_config, resource_keys=launcher.resource_keys)
+    parsed_yaml_config = yaml.safe_load(args.matrix.read_text())
+    validate_yaml_config_file(parsed_yaml_config, resource_keys=launcher.resource_keys)
     logger.info("YAML config valid.")
 
-    cfg_dir = os.path.expandvars(yaml_config["configs_dir"])
-    log_dir = os.path.expandvars(yaml_config["log_dir"])
-    output_dir = os.path.expandvars(yaml_config["output_dir"])
+    cfg_dir = os.path.expandvars(parsed_yaml_config["configs_dir"])
+    log_dir = os.path.expandvars(parsed_yaml_config["log_dir"])
+    output_dir = os.path.expandvars(parsed_yaml_config["output_dir"])
     for d in (cfg_dir, log_dir, output_dir):
         Path(d).mkdir(parents=True, exist_ok=True)
     logger.debug(f"Output dirs ready: configs={cfg_dir}, logs={log_dir}, output={output_dir}")
 
-    repetitions = int(yaml_config.get("repetitions"))
-    experiments = generate_experiments(yaml_config, repetitions)
+    experiments = generate_experiments(parsed_yaml_config)
+    repetitions = int(parsed_yaml_config["repetitions"])
     if repetitions > 1:
         logger.info(f"Repetitions: {repetitions}x -> {len(experiments)} runs in total")
 
     writer = JobWriter(launcher)
-    writer.write_configs(experiments, cfg_dir, output_dir, yaml_config)
+    writer.write_configs(experiments, cfg_dir, output_dir, parsed_yaml_config)
 
     sbatch_dir = str(Path(output_dir) / "sbatch")
-    writer.write_sbatch_files(experiments, cfg_dir, log_dir, output_dir, sbatch_dir, yaml_config)
+    writer.write_sbatch_files(experiments, cfg_dir, log_dir, output_dir, sbatch_dir, parsed_yaml_config)
 
     submit_all = Path(sbatch_dir) / "submit_all.sh"
     logger.info(f"[{launcher.name}] Generated {len(experiments)} independent jobs.")
