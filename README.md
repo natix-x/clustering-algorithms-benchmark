@@ -74,51 +74,45 @@ flowchart TB
 config:
   layout: dagre
 ---
-flowchart TB
-    START_DOT((( ))) --> YAML
+classDiagram
+    direction TB
     
-    YAML["experiment_configs/&lt;name&gt;.yaml<br>nodes × resources × algorithms × datasets × repetitions"]
-    START["START: slurm_experiments_orchestrator.run_experiments.py --framework {spark|flink} [--submit]"]
-    
-    InitSpark["inicjalizacja SparkLauncher"]
-    InitFlink["inicjalizacja FlinkLauncher"]
-    
-    V["validate_yaml_config_file(parsed_yaml_config, launcher)<br>walidacja pliku konfiguracyjnego YAML dla konkretnego frameworka"]
-    G["generate_experiments(parsed_yaml_config)<br>iloczyn kartezjański nodes × resources × algorithms × datasets × repetitions → list[Experiment], każdy z unikalnym runId"]
-    JW["inicjalizacja JobWriter(launcher)<br>Deleguje pracę do launchera"]
-    
-    WC["① write_configs(...) → launcher.build_run_config()<br>przygotowuje metadane eksperymentu (zasoby, ścieżki, konfiguracje itp.), Job Writer zapisuje je jako &lt;runId&gt;.json"]
-    WS["② write_sbatch_files(...) → launcher.render_sbatch()<br>wypełnia szablon sbatch metadanymi eksperymentu, zapisuje &lt;runId&gt;.sbatch + submit_all.sh, który pozwoli później uruchomić wszystkie joby na raz"]
-    
-    RUN["submit_all.sh → uruchamia sbatch &lt;runId&gt;.sbatch dla każdego eksperymentu"]
-    END_NODE["zwraca gotowe pliki"]
+    class JobWriter {
+        -_launcher : Launcher
+        +write_configs() void
+        +write_sbatch_files() void
+    }
+    note for JobWriter "Kontekst wzorca realizujący delegację zadań"
 
-    YAML --> START
+    class SparkLauncher {
+        +name : str = "spark"
+        +resource_keys : tuple = SPARK_RESOURCE_KEYS
+        +build_run_config() dict
+        +render_sbatch() str
+    }
     
-    q1_choice{"--framework = ?"}
-    START --> q1_choice
-    q1_choice -- spark --> InitSpark
-    q1_choice -- flink --> InitFlink
+    class FlinkLauncher {
+        +name : str = "flink"
+        +resource_keys : tuple = FLINK_RESOURCE_KEYS
+        +build_run_config() dict
+        +render_sbatch() str
+    }
     
-    join_launchers(("launcher"))
-    InitSpark --> join_launchers
-    InitFlink --> join_launchers
+    class Launcher {
+        <<abstract>>
+        +name : str
+        +resource_keys : "tuple[str, ...]"
+        +build_run_config()* dict
+        +render_sbatch()* str
+    }
+    note for Launcher "Abstrakcyjna klasa bazowa (Strategia)"
+
+    %% JobWriter korzysta z interfejsu wystawionego przez klasę bazową
+    JobWriter --> Launcher : Korzysta ze strategii
     
-    join_launchers --> V
-    
-    V --> G
-    G --> JW
-    JW --> WC
-    WC --> WS
-    
-    sub_choice{"--submit?"}
-    WS --> sub_choice
-    sub_choice -- tak --> RUN
-    sub_choice -- nie --> END_NODE
-    
-    END_DOT((( )))
-    RUN --> END_DOT
-    END_NODE --> END_DOT
+    %% Klasy konkretne rozszerzają abstrakcyjną klasę bazową
+    SparkLauncher --|> Launcher : rozszerza
+    FlinkLauncher --|> Launcher : rozszerza
 ```
 
 ### The contract (why this stays decoupled)
