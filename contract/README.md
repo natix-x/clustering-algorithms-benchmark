@@ -4,23 +4,26 @@ Single source of truth for the JSON exchanged between the **harness** (this repo
 and each **engine jar** (`spark-clustering-algorithms`, `flink-clustering-algorithms`).
 
 ```
-matrix.yaml ──(harness)──▶ <runId>.json  ──(engine jar: --config)──▶  <runId>.json (result)
-              run_config.schema.json                                   run_result.schema.json
+experiment_configs/*.yaml ──(harness)──▶ <runId>.json  ──(engine jar: --config)──▶  <runId>.json (result)
+                            run_config.schema.json                                  
 ```
 
-The harness **writes** a per-run config that validates against
+The harness **writes** a per-run config that conforms to
 [`run_config.schema.json`](run_config.schema.json). Each engine jar **reads** that
-config, runs the job, and **writes** a result that validates against
-[`run_result.schema.json`](run_result.schema.json). Analysis then reads results
-uniformly across engines.
+config, runs the job, and **writes** a result that conforms to
 
 ## Why a spec (Option A) instead of a shared library
 
 Spark is Scala, Flink is Java — a shared JVM contract lib would force a
-cross-language build + submodule wiring. Instead, **each engine keeps its own small
-parser/serializer** and conforms to these schemas. Drift is caught by a validation
-test in each engine repo (output must validate against `run_result.schema.json`).
-If the schema starts churning, we can promote this to a plain-Java contract jar later.
+cross-language build + submodule wiring. Instead, **each repo keeps its own small
+parser/serializer** and conforms to these schemas:
+
+- the harness (Python) builds the config as plain dicts;
+- the Spark jar mirrors it with a Scala `case class`;
+- the Flink jar mirrors it with a Java POJO.
+
+Drift is caught by tests (see *Validating* below), not by a shared type. If the schema
+starts churning, we can promote it to a plain-Java contract jar later.
 
 ## CORE vs ENGINE fields
 
@@ -40,13 +43,12 @@ If the schema starts churning, we can promote this to a plain-Java contract jar 
 the neutral alias. Analysis accepts either; new Flink output should prefer
 `engineConf`. Both are declared in the schemas.
 
-## Validating locally
+## Validating
 
-```bash
-# any result file
-python -m jsonschema -i <result>.json contract/run_result.schema.json   # pip install jsonschema
-```
+Conformance is checked by **tests**, at the side that **produces** each artifact:
 
-The harness validates generated configs against `run_config.schema.json` before
-writing them; each engine repo has a test validating a sample result against
-`run_result.schema.json`.
+- **`run_config`** (produced by the harness): `tests/test_contract.py` validates every
+  `build_run_config` output against `run_config.schema.json`.
+- **`run_result`** (produced by each engine jar): validated in the engine repos, against
+  `run_result.schema.json` — the harness does not produce results, so it does not check
+  them.
