@@ -8,7 +8,6 @@ Part of the Master thesis 'Performance and efficiency issues of the use of Big D
 * [Project structure](#project-structure)
 * [Requirements](#requirements)
 * [Usage](#usage)
-* [Contract](#contract)
 
 
 ### General info
@@ -19,6 +18,13 @@ live in the per-engine repos:
 
 - [`spark-clustering-algorithms`](https://github.com/natix-x/spark-clustering-algorithms) — Scala / Spark
 - [`flink-clustering-algorithms`](https://github.com/natix-x/flink-clustering-algorithms) — Java / Flink
+
+A language-neutral JSON contract couples the harness with each engine jar: the harness
+produces `run_config`, each engine consumes it and produces a result. The format, the
+CORE vs ENGINE fields, and how conformance is validated are documented in
+[`contract/README.md`](contract/README.md).
+
+> **Note:** Some documentation and diagrams are in Polish, as the master thesis they accompany is written in Polish.
 
 ## Architecture
 
@@ -174,39 +180,38 @@ sequenceDiagram
 
   SLURM->>Script: Przydział zasobów i inicjalizacja skryptu
   activate Script
-  Note over Script: Inicjalizacja: ustalenie hosta i portów Spark Mastera,<br/>puli CPU/RAM, katalogów roboczych<br/>oraz rejestracja procedury czyszczącej (trap EXIT)
+  Note over Script,Executors: 1. Inicjalizacja środowiska
+  Script->>Script: Konfiguracja środowiska (host i porty Mastera, pula CPU/RAM, katalogi robocze, trap EXIT)
 
+  Note over Script,Executors: 2. Uruchomienie klastra
   Script-)Master: Inicjalizacja Spark Mastera (start-master.sh)
   activate Master
-
   loop Oczekiwanie na gotowość Mastera
     Script->>Script: Sprawdzanie logów 
   end
-
   Script-)Workers: Równoległe uruchomienie Workerów na węzłach
   activate Workers
   Workers-)Master: Rejestracja workerów w klastrze (deklaracja puli CPU i RAM)
 
+  Note over Script,Executors: 3. Weryfikacja gotowości
   loop Weryfikacja stanu klastra
     Script->>Master: Odpytanie REST API o status infrastruktury
     Master-->>Script: Potwierdzenie dostępności N węzłów roboczych
   end
 
+  Note over Script,Executors: 4. Wysłanie zadania i obliczenia
   Script->>App: Delegacja zadania obliczeniowego (spark-submit w trybie client)
   activate App
   App-)Master: Rejestracja kontekstu (SparkContext) i żądanie alokacji zasobów
   Master-)Workers: Zlecenie uruchomienia executorów na Workerach
   Workers-)Executors: Uruchomienie procesów JVM (Spark Executors)
   activate Executors
-
-  Note over App,Executors: Właściwe obliczenia Sparka
-
   Executors-->>App: Zwrócenie rezultatów i statusu wykonania
   deactivate Executors
   App-->>Script: Zakończenie pracy
   deactivate App
 
-  Note over Script: Przechwycenie sygnału zakończenia i czyszczenie klastra
+  Note over Script,Executors: 5. Sprzątanie (trap EXIT)
   Script-)Master: Zakończenie procesu Mastera (stop-master.sh)
   deactivate Master
   Script-)Workers: Usunięcie tymczasowych obszarów roboczych
@@ -216,52 +221,89 @@ sequenceDiagram
 ```
 
 #### Flink bootstrap (inside each `<runId>.sbatch`)
+TODO: przyjrzyj jeszcze raz ten diagram - czy ma sens krok z ususwaniem TaskManagerów osobno ??? 
 
 Standalone **session** cluster: `flink run` submits to the JobManager REST endpoint;
 the trap stops all daemons on exit.
 
 ```mermaid
----
-config:
-  layout: dagre
----
-flowchart TB
-    START_DOT((( ))) --> ENV
+sequenceDiagram
+  autonumber
+  actor SLURM as SLURM
 
-    ENV["module purge &amp;&amp; module load {java_module}<br>brak modułu Flink na Ares → własna instalacja FLINK_HOME + Java 11 (wspólny runtime ze Spark 3.3)"]
-    CC["check_config()<br>sprawdza, czy &lt;runId&gt;.json istnieje"]
-    SD["setup_dirs()<br>CLUSTERING_METRICS_FILE + FLINK_CONF_DIR na WSPÓŁDZIELONYM storage (Lustre),<br>by TaskManagery z innych węzłów widziały tę samą konfigurację"]
-    CFG["configure_cluster()<br>JM_HOST = pierwszy węzeł, liczy TOTAL_TMS = nodes × tms_per_node oraz TOTAL_SLOTS"]
-    WCONF["write_flink_conf()<br>dopisuje do flink-conf.yaml: rpc.address=JM_HOST, bind-host 0.0.0.0,<br>numberOfTaskSlots, pamięć JM/TM, parallelism, file metric reporter"]
-    TRAP["trap cleanup EXIT INT TERM<br>rejestruje sprzątanie: taskmanager.sh stop-all + jobmanager.sh stop"]
-    SJM["start_jobmanager()<br>jobmanager.sh start na węźle głównym"]
-    STM["start_taskmanagers()<br>srun 1 TaskManager/task → taskmanager.sh start-foreground<br>-D taskmanager.host=$(hostname) (adres routowalny, nie loopback)"]
-    WTM["wait_for_taskmanagers()<br>poll REST http://JM_HOST:8081/overview aż taskmanagers ≥ TOTAL_TMS (do 120 s)"]
-    SUB["submit_job()<br>$FLINK_HOME/bin/flink run -m JM_HOST:8081 -p parallelism → jar --config &lt;runId&gt;.json"]
-    CLEAN["cleanup() (na EXIT)<br>stop wszystkich TaskManagerów + JobManagera, usuwa tmp/conf, zwraca kod wyjścia"]
+  box Węzeł Główny
+    participant Skrypt as Skrypt sbatch
+    participant JM as JobManager
+    participant Client as Flink Client
+  end
 
-    ENV --> CC --> SD --> CFG --> WCONF --> TRAP --> SJM --> STM --> WTM --> SUB
-    SUB --> CLEAN
-    CLEAN --> END_DOT((( )))
+  box Węzły Obliczeniowe
+    participant TM as TaskManagers
+  end
+
+  participant Storage as Współdzielony dysk
+
+  SLURM->>Skrypt: Przydział zasobów i inicjalizacja skryptu
+  activate Skrypt
+  Note over Skrypt,Storage: 1. Inicjalizacja środowiska
+  Skrypt-)Storage: Wygenerowanie flink-conf.yaml (pamięć, porty, reporter metryk)
+
+  Note over Skrypt,TM: 2. Uruchomienie klastra
+  Skrypt-)JM: Uruchomienie procesu JobManagera
+  activate JM
+  Storage-->>JM: Załadowanie konfiguracji (otwarcie portów RPC/REST)
+  Skrypt-)TM: Równoległy start N TaskManagerów
+  activate TM
+  Storage-->>TM: Załadowanie spójnej konfiguracji
+  TM-)JM: Rejestracja dostępnych Task Slots
+
+  Note over Skrypt,TM: 3. Weryfikacja gotowości
+  loop Weryfikacja stanu klastra
+    Skrypt->>JM: Odpytanie REST API (GET /overview) o stan zasobów
+    JM-->>Skrypt: Potwierdzenie dostępności oczekiwanej liczby TaskManagerów
+  end
+
+  Note over Skrypt,TM: 4. Wysłanie zadania i obliczenia
+  Skrypt->>Client: Zlecenie uruchomienia zadania (flink run)
+  activate Client
+  Client-)JM: Wysłanie aplikacji (plik JAR) oraz JobGraph
+  JM-)TM: Dystrybucja podzadań (Tasks) do zarejestrowanych slotów
+  TM-)Storage: Asynchroniczny zapis logów i metryk klastrowania
+  Client-->>Skrypt: Potwierdzenie zakończenia
+  deactivate Client
+
+  Note over Skrypt,TM: 5. Sprzątanie (trap EXIT)
+  Skrypt-)TM: Zatrzymanie TaskManagerów
+  deactivate TM
+  Skrypt-)JM: Zatrzymanie JobManagera
+  deactivate JM
+  Skrypt-)Storage: Usunięcie tymczasowych plików konfiguracyjnych klastra
+  Skrypt-->>SLURM: Zakończenie joba i zwolnienie przydzielonych węzłów
+  deactivate Skrypt
 ```
 
 #### Flink one-time setup on Ares
-TODO: refactor this 
 
-Ares has no Flink module (`module avail flink` is empty) and Flink loads metric reporters
-from its **own** classpath (`$FLINK_HOME/lib`), not the job jar. So before the first run,
-install Flink and drop the reporter jar into `lib/` (once per install; `flink_home` in the
-YAML points here — e.g. `$SCRATCH/flink-1.17.1`):
+Unlike Spark, Flink is **not** available as an Ares module,
+and Flink loads metric reporters from its **own** classpath (`$FLINK_HOME/lib`) rather than
+from the job jar. So a Flink installation and the reporter jar must be prepared **once per
+install**, before the first run. The YAML `flink_home` points at this install
+(e.g. `$SCRATCH/flink-1.17.1`).
+
+**1. Install Flink on shared scratch.** Use 1.17.1 (matches the jar's `flink.version`) on
+Java 11 — the common runtime with Spark 3.3, for a consistent comparison:
 
 ```bash
-# 1. Install Flink 1.17.1 (matches the jar's flink.version) on shared scratch, run on
-#    Java 11 (the common runtime with Spark 3.3, for a consistent comparison).
 cd "$SCRATCH"
 wget https://archive.apache.org/dist/flink/flink-1.17.1/flink-1.17.1-bin-scala_2.12.tgz
 tar xzf flink-1.17.1-bin-scala_2.12.tgz        # -> $SCRATCH/flink-1.17.1 (= flink_home)
+```
 
-# 2. Build the slim reporter jar from the flink-clustering-algorithms repo and install it
-#    on the cluster classpath (depends only on flink-metrics-core, already in Flink).
+**2. Build and install the metric-reporter jar.** Built from the
+`flink-clustering-algorithms` repo; it is slim (depends only on `flink-metrics-core`,
+already shipped with Flink) and must live on the cluster classpath, not in the job jar:
+
+```bash
 cd /path/to/flink-clustering-algorithms/flink
 mvn -o package
 cd target/classes
@@ -270,16 +312,6 @@ jar cf ../flink-clustering-metrics-reporter.jar \
   META-INF/services/org.apache.flink.metrics.reporter.MetricReporterFactory
 cp ../flink-clustering-metrics-reporter.jar "$SCRATCH/flink-1.17.1/lib/"
 ```
-
-Two invariants the sbatch template and the Flink job enforce (misconfig fails fast rather
-than silently under-reporting):
-
-- **Shared metrics path** — each JobManager/TaskManager reporter writes `<path>.<uuid>`
-  and the driver globs them, so `CLUSTERING_METRICS_FILE` must be on shared storage
-  (Lustre `$SCRATCH`) visible to all nodes, else the driver sees only its own node.
-- **Fresh cluster per run** — the reporter keeps a per-process peak map in memory, so a
-  reused session cluster would accumulate metrics across runs. The template starts and
-  tears down a cluster per job (teardown also triggers the reporter's final flush).
 
 ## Project structure
 
@@ -352,10 +384,3 @@ sets `PYTHONPATH` and forwards args to the Python entrypoint):
 The experiment YAML format is documented in [`experiment_configs/README.md`](experiment_configs/README.md).
 <br/>
 You can also check out the real example config files that are provided in `experiment_configs/` directory.
-
-## Contract
-
-A language-neutral JSON contract couples the harness with each engine jar: the harness
-produces `run_config`, each engine consumes it and produces a result. The format, the
-CORE vs ENGINE fields, and how conformance is validated are documented in
-[`contract/README.md`](contract/README.md).
