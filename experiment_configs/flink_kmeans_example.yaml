@@ -18,7 +18,7 @@ evaluation_config:
   sampleSize: 10000
   seed: 42
 
-# engine_conf_defaults: {}        # optional Flink config (taskmanager/network/...)
+# flink_config: {}          # optional extra Flink config (taskmanager/network/...)
 
 experiment_matrix:
   nodes: [2]

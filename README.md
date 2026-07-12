@@ -172,9 +172,9 @@ sequenceDiagram
     participant Executors as Spark Executors
   end
 
-  SLURM->>Script: Przydział zasobów (N węzłów) i inicjalizacja skryptu
+  SLURM->>Script: Przydział zasobów i inicjalizacja skryptu
   activate Script
-  Note over Script: Inicjalizacja: ustalenie hosta i portów Mastera,<br/>puli CPU/RAM, katalogów roboczych<br/>oraz rejestracja procedury czyszczącej (trap EXIT)
+  Note over Script: Inicjalizacja: ustalenie hosta i portów Spark Mastera,<br/>puli CPU/RAM, katalogów roboczych<br/>oraz rejestracja procedury czyszczącej (trap EXIT)
 
   Script-)Master: Inicjalizacja Spark Mastera (start-master.sh)
   activate Master
@@ -183,7 +183,7 @@ sequenceDiagram
     Script->>Script: Sprawdzanie logów 
   end
 
-  Script-)Workers: Równoległe uruchomienie Workerów na węzłach (srun)
+  Script-)Workers: Równoległe uruchomienie Workerów na węzłach
   activate Workers
   Workers-)Master: Rejestracja workerów w klastrze (deklaracja puli CPU i RAM)
 
@@ -246,6 +246,7 @@ flowchart TB
 ```
 
 #### Flink one-time setup on Ares
+TODO: refactor this 
 
 Ares has no Flink module (`module avail flink` is empty) and Flink loads metric reporters
 from its **own** classpath (`$FLINK_HOME/lib`), not the job jar. So before the first run,
@@ -280,40 +281,10 @@ than silently under-reporting):
   reused session cluster would accumulate metrics across runs. The template starts and
   tears down a cluster per job (teardown also triggers the reporter's final flush).
 
-### The contract
-
-`contract/*.schema.json` is the **single, language-neutral source of truth** for the
-JSON exchanged between the three repos. Two schemas, one per direction:
-
-- `run_config.schema.json` — the per-run input the harness **produces** and each engine
-  jar **consumes** (via `--config <runId>.json`).
-- `run_result.schema.json` — the result each engine jar **produces**, read uniformly by
-  the analysis code.
-
-```
-                   run_config.schema.json                 run_result.schema.json
-                          (input)                                (output)
-   harness (Python)  ───writes──►  <runId>.json  ──►  engine jar  ───writes──►  <runId>.json (result)
-                                                     (Spark / Flink)                    │
-                                                                                        ▼
-                                                                                 analysis (pandas)
-```
-
-The schema is **not a shared JVM library**: each engine keeps its own small
-parser/serializer (Scala `case class`, Java POJO) that mirrors the schema by hand — no
-cross-language build. Conformance is enforced by tests, not at runtime:
-
-- harness side: `tests/test_contract.py` checks that every `build_run_config` output
-  validates against `run_config.schema.json`;
-- engine side: each engine repo validates a sample result against `run_result.schema.json`.
-
-Adding an engine = one `Launcher` subclass + its resource-key tuple + one `_LAUNCHERS`
-entry — nothing in the harness core changes.
-
 ## Project structure
 
 ```
-contract/                         # JSON Schemas: the source of truth (see contract/README.md)
+contract/                         # run_config.schema.json: the input contract (see contract/README.md)
 experiment_configs/               # YAML experiment matrices (engine-neutral)
 local_testing/experiment_configs/ # example per-run configs (contract fixtures)
 python/
@@ -378,13 +349,13 @@ sets `PYTHONPATH` and forwards args to the Python entrypoint):
 ./slurm_run.sh -f spark experiment_configs/spark_kmeans_example.yaml
 ```
 
-Input YAML is validated up front (`yaml_validator`). Generated per-run configs are
-checked against the contract in the test suite (`tests/test_contract.py`), not at
-runtime.
+The experiment YAML format is documented in [`experiment_configs/README.md`](experiment_configs/README.md).
+<br/>
+You can also check out the real example config files that are provided in `experiment_configs/` directory.
 
 ## Contract
 
-See [`contract/README.md`](contract/README.md). In short: each engine jar reads the
-same `RunConfig` JSON and writes the same `RunResult` JSON, so analysis is uniform
-across engines. Fields are tagged CORE (engine-neutral, mandatory) vs ENGINE
-(Spark-flavoured counters; Flink emits the analogue or 0).
+A language-neutral JSON contract couples the harness with each engine jar: the harness
+produces `run_config`, each engine consumes it and produces a result. The format, the
+CORE vs ENGINE fields, and how conformance is validated are documented in
+[`contract/README.md`](contract/README.md).
