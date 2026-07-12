@@ -18,7 +18,7 @@ class FlinkLauncher(Launcher):
     def build_run_config(
         self, experiment: Experiment, output_dir: str, yaml_config: dict
     ) -> dict:
-        engine_conf = dict(yaml_config.get("engine_conf_defaults", yaml_config.get("flink_conf_defaults", {})))
+        engine_conf = dict(yaml_config.get("flink_config", {}))
         evaluation  = dict(yaml_config.get("evaluation_config", {}))
         sbatch_def  = yaml_config.get("sbatch_config", {})
         res         = experiment.cell["resources"]
@@ -56,7 +56,7 @@ class FlinkLauncher(Launcher):
             "dataset":            dataset,
             "algorithm":          dict(experiment.cell["algorithms"]),
             "evaluation":         evaluation,
-            "engineConf":         engine_conf,
+            "flink_config":       engine_conf,
             "experimentMetadata": experiment_metadata,
         }
 

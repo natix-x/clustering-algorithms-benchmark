@@ -59,6 +59,12 @@ print(49152 + int.from_bytes(seed[:2], 'big') % 16383)
     CORES="${{SLURM_CPUS_PER_TASK:-{cpus_per_task}}}"
     EXECUTORS_PER_NODE={executors_per_node}
     TOTAL_EXECUTORS=$(( SLURM_NNODES * EXECUTORS_PER_NODE ))
+    # Worker != Executor: we start exactly one long-lived Worker DAEMON per node (see
+    # start_workers). Executors are JVM processes the Master spawns ON those Workers at
+    # spark-submit time; their COUNT is driven by spark.cores.max / EXEC_CORES, not by the
+    # Worker daemon count. So the readiness gate below waits for SLURM_NNODES daemons, not
+    # TOTAL_EXECUTORS (aliveworkers can never exceed the number of Worker daemons started).
+    EXPECTED_WORKERS="$SLURM_NNODES"
     # Cores PER EXECUTOR (granted explicitly in the matrix YAML). The worker advertises
     # all $CORES; standalone packs EXECUTORS_PER_NODE executors of EXEC_CORES each onto
     # it. The YAML author keeps cores and executor memory mutually consistent.
@@ -129,23 +135,23 @@ start_workers() {{
 }}
 
 wait_for_workers() {{
-    echo -n "Waiting for $TOTAL_EXECUTORS workers (REST $MASTER_UI/json/)"
+    echo -n "Waiting for $EXPECTED_WORKERS Worker daemons (REST $MASTER_UI/json/)"
     WORKERS_READY=0
     for _i in $(seq 1 60); do
         WORKERS_READY=$(curl -sf "$MASTER_UI/json/" 2>/dev/null \
         | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('aliveworkers', 0))" \
         2>/dev/null || echo 0)
 
-        if [ "$WORKERS_READY" -ge "$TOTAL_EXECUTORS" ]; then
-            echo " OK ($WORKERS_READY/$TOTAL_EXECUTORS w ${{_i}} s)"
+        if [ "$WORKERS_READY" -ge "$EXPECTED_WORKERS" ]; then
+            echo " OK ($WORKERS_READY/$EXPECTED_WORKERS w ${{_i}} s)"
             break
         fi
         echo -n "."
         sleep 2
     done
 
-    if [ "$WORKERS_READY" -lt "$TOTAL_EXECUTORS" ]; then
-        echo -e "\\nERROR: Only $WORKERS_READY/$TOTAL_EXECUTORS workers ready. Stopping."
+    if [ "$WORKERS_READY" -lt "$EXPECTED_WORKERS" ]; then
+        echo -e "\\nERROR: Only $WORKERS_READY/$EXPECTED_WORKERS Worker daemons ready. Stopping."
         echo "Cluster status (API):"
         curl -sf "$MASTER_UI/json/" 2>/dev/null \
         | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))" \

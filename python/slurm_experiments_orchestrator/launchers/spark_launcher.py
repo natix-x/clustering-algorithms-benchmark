@@ -1,9 +1,3 @@
-"""Spark launcher: standalone-cluster bootstrap + spark-submit, plus the Spark
-memory sizing that turns an SBATCH --mem into driver/executor/worker pools.
-
-Behaviour is lifted verbatim from the former spark-repo jobs_writer; only the
-seam (Launcher methods) is new.
-"""
 from __future__ import annotations
 
 import logging
@@ -32,7 +26,7 @@ class SparkLauncher(Launcher):
     def build_run_config(
         self, experiment: Experiment, output_dir: str, yaml_config: dict
     ) -> dict:
-        spark_conf      = dict(yaml_config.get("spark_conf_defaults", {}))
+        spark_conf      = dict(yaml_config.get("spark_config", {}))
         evaluation      = dict(yaml_config.get("evaluation_config", {}))
         sbatch_config = yaml_config.get("sbatch_config", {})
 
@@ -76,7 +70,7 @@ class SparkLauncher(Launcher):
             "dataset":            dataset,
             "algorithm":          dict(experiment.cell["algorithms"]),
             "evaluation":         evaluation,
-            "sparkConf":          spark_conf,
+            "spark_config":       spark_conf,
             "experimentMetadata": experiment_metadata,
         }
 
