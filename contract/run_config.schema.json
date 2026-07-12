@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/natix-x/clustering-algorithms-benchmark/contract/run_config.schema.json",
   "title": "RunConfig",
-  "description": "Input contract for a single benchmark run. Engine-neutral: both the Spark and Flink jars read this exact shape via their own parser. Mirrors clustering.benchmark.config.RunConfig (Scala). 'engineConf' is the neutral name; the Spark jar currently reads/writes it as 'sparkConf' (both accepted - see contract/README.md).",
+  "description": "Input contract for a single benchmark run. Shared shape across engines; engine-specific tuning lives under per-engine keys: the Spark jar reads 'spark_config', the Flink jar reads 'flink_config'. Mirrors clustering.benchmark.config.RunConfig in each engine repo.",
   "type": "object",
   "required": ["runId", "dataset", "algorithm", "evaluation"],
   "additionalProperties": false,
@@ -67,15 +67,15 @@
         }
       }
     },
-    "engineConf": {
+    "spark_config": {
       "type": "object",
       "additionalProperties": { "type": "string" },
-      "description": "Extra engine configuration entries set before session start (Spark: SparkConf; Flink: execution config). Neutral name."
+      "description": "Extra Spark configuration entries (SparkConf) set before session start. Read by the Spark jar; absent/ignored for Flink runs."
     },
-    "sparkConf": {
+    "flink_config": {
       "type": "object",
       "additionalProperties": { "type": "string" },
-      "description": "DEPRECATED alias of engineConf, accepted by the Spark jar. Prefer engineConf for new configs."
+      "description": "Extra Flink configuration entries (execution config) set before session start. Read by the Flink jar; absent/ignored for Spark runs."
     },
     "outputDir": {
       "type": ["string", "null"],

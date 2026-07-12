@@ -5,8 +5,6 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
-# transient cluster run outputs (configs/logs/sbatch generated per submission)
-local_testing/results/
 
 # experiment_configs: commit only the two illustrative examples (spark + flink).
 # Real experiment matrices are kept locally, not committed.

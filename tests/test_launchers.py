@@ -47,16 +47,16 @@ def test_flink_parallelism_equals_total_slots(flink_yaml):
     assert cfg["experimentMetadata"]["parallelism"] == "4"
 
 
-def test_spark_uses_sparkconf_key(spark_yaml):
+def test_spark_uses_spark_config_key(spark_yaml):
     exp = generate_experiments(spark_yaml)[0]
     cfg = launchers.get_launcher("spark").build_run_config(exp, "/tmp/o", spark_yaml)
-    assert "sparkConf" in cfg and "engineConf" not in cfg
+    assert "spark_config" in cfg and "flink_config" not in cfg
 
 
-def test_flink_uses_engineconf_key(flink_yaml):
+def test_flink_uses_flink_config_key(flink_yaml):
     exp = generate_experiments(flink_yaml)[0]
     cfg = launchers.get_launcher("flink").build_run_config(exp, "/tmp/o", flink_yaml)
-    assert "engineConf" in cfg and "sparkConf" not in cfg
+    assert "flink_config" in cfg and "spark_config" not in cfg
 
 
 def test_experiment_metadata_all_strings(spark_yaml):

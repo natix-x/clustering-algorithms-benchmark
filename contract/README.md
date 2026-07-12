@@ -37,11 +37,11 @@ starts churning, we can promote it to a plain-Java contract jar later.
   the same column set across engines so pandas sees stable columns; see each field's
   `description` for the Spark→Flink mapping.
 
-### Engine config key
+### Engine config keys
 
-`sparkConf` is the historical key (still emitted by the Spark jar). `engineConf` is
-the neutral alias. Analysis accepts either; new Flink output should prefer
-`engineConf`. Both are declared in the schemas.
+Engine-specific tuning lives under **per-engine keys** in `run_config`: the Spark jar
+reads `spark_config`, the Flink jar reads `flink_config` (each a `{string: string}`
+map, both optional). A run only carries the key for its own engine.
 
 ## Validating
 

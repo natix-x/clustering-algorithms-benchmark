@@ -168,24 +168,24 @@ sequenceDiagram
   end
 
   box Węzły Obliczeniowe 
-    participant Workers as Worker (Spark)
-    participant Executors as Procesy Wykonawcze (Executors)
+    participant Workers as Spark Worker
+    participant Executors as Spark Executors
   end
 
   SLURM->>Script: Przydział zasobów (N węzłów) i inicjalizacja skryptu
   activate Script
   Note over Script: Inicjalizacja: ustalenie hosta i portów Mastera,<br/>puli CPU/RAM, katalogów roboczych<br/>oraz rejestracja procedury czyszczącej (trap EXIT)
 
-  Script->>Master: Inicjalizacja Spark Mastera (start-master.sh)
+  Script-)Master: Inicjalizacja Spark Mastera (start-master.sh)
   activate Master
 
   loop Oczekiwanie na gotowość Mastera
     Script->>Script: Sprawdzanie logów 
   end
 
-  Script->>Workers: Równoległe uruchomienie Workerów na węzłach (srun)
+  Script-)Workers: Równoległe uruchomienie Workerów na węzłach (srun)
   activate Workers
-  Workers-->>Master: Rejestracja workerów w klastrze (deklaracja puli CPU i RAM)
+  Workers-)Master: Rejestracja workerów w klastrze (deklaracja puli CPU i RAM)
 
   loop Weryfikacja stanu klastra
     Script->>Master: Odpytanie REST API o status infrastruktury
@@ -194,9 +194,9 @@ sequenceDiagram
 
   Script->>App: Delegacja zadania obliczeniowego (spark-submit w trybie client)
   activate App
-  App->>Master: Rejstracja kontekstu (SparkContext) i żądanie alokacji zasobów
-  Master->>Workers: Zlecenie utworzenia instancji wykonawczych
-  Workers->>Executors: Uruchomienie procesów JVM (Executors)
+  App-)Master: Rejestracja kontekstu (SparkContext) i żądanie alokacji zasobów
+  Master-)Workers: Zlecenie uruchomienia executorów na Workerach
+  Workers-)Executors: Uruchomienie procesów JVM (Spark Executors)
   activate Executors
 
   Note over App,Executors: Właściwe obliczenia Sparka
@@ -207,9 +207,9 @@ sequenceDiagram
   deactivate App
 
   Note over Script: Przechwycenie sygnału zakończenia i czyszczenie klastra
-  Script->>Master: Zakończenie procesu Mastera (stop-master.sh)
+  Script-)Master: Zakończenie procesu Mastera (stop-master.sh)
   deactivate Master
-  Script->>Workers: Usunięcie tymczasowych obszarów roboczych
+  Script-)Workers: Usunięcie tymczasowych obszarów roboczych
   deactivate Workers
   Script-->>SLURM: Zakończenie joba i zwolnienie przydzielonych węzłów
   deactivate Script
