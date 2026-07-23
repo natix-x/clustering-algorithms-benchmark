@@ -18,9 +18,6 @@ Feature layout (index -> meaning):
     5 pickup_longitude
     6 trip_distance             trip attributes -> heterogeneous vector
     7 fare_amount
-
-TLC trips (since 2015) carry no raw coordinates, only PULocationID; latitude/longitude
-come from a broadcast join with the taxi-zone lookup table (one centroid per zone).
 """
 
 import glob
@@ -31,6 +28,8 @@ from functools import reduce
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+from data_preprocessing.common.features import compute_stats, standardize, to_feature_array
+from data_preprocessing.common.spark import build_session
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -60,8 +59,6 @@ FEATURE_COLS = [
     "trip_distance",
     "fare_amount",
 ]
-
-MAX_PARTITION_BYTES = 256 * 1024 * 1024  # 256 MB read split -> output file size
 
 _TWO_PI = 2 * math.pi
 
@@ -94,8 +91,7 @@ def _read_trips(spark: SparkSession) -> DataFrame:
 def build_features(spark: SparkSession):
     """Read raw trips + zones, engineer + join features (NOT yet standardized).
 
-    Returns (features_df, raw_row_count). The raw count is the pre-filter total (cheap:
-    Spark reads only Parquet footers since there's no filter yet).
+    Returns (features_df, raw_row_count).
     """
     trips = _read_trips(spark)
     raw_count = trips.count()
@@ -131,38 +127,18 @@ def build_features(spark: SparkSession):
     return joined.select(*FEATURE_COLS), raw_count
 
 
-def compute_stats(df):
-    """One pass: per-feature mean/std + row count (for standardization + logging)."""
-    agg = [F.count(F.lit(1)).alias("__n")]
-    agg += [F.mean(c).alias(f"{c}__m") for c in FEATURE_COLS]
-    agg += [F.stddev(c).alias(f"{c}__s") for c in FEATURE_COLS]
-    return df.select(*agg).first()
-
-
-def standardize(df, stats):
-    """Z-score each feature: (c - mean) / std. Engine-neutral, no ML VectorUDT."""
-    scaled = []
-    for c in FEATURE_COLS:
-        mean = stats[f"{c}__m"]
-        std = stats[f"{c}__s"]
-        std = std if std and std > 0 else 1.0  # guard constant columns
-        scaled.append(((F.col(c) - F.lit(mean)) / F.lit(std)).alias(c))
-    return df.select(*scaled)
-
-
 def main() -> None:
-    spark = SparkSession.builder.appName("NYC_Data_Prep").getOrCreate()
-    spark.conf.set("spark.sql.files.maxPartitionBytes", str(MAX_PARTITION_BYTES))
+    spark = build_session("NYC_Data_Prep")
 
-    # Two lazy passes over the (small) raw data — no cache, so nothing spills to the tiny
+    # Two lazy passes over the (small) data — no cache, so nothing spills to the tiny
     # local disk: pass 1 = stats, pass 2 = write. build_features() is deterministic so both
     # passes see identical rows.
     features, raw_count = build_features(spark)
-    stats = compute_stats(features)  # pass 1
+    stats = compute_stats(features, FEATURE_COLS)  # pass 1
     kept = stats["__n"]
 
-    scaled = standardize(features, stats)
-    out = scaled.select(F.array(*[F.col(c) for c in FEATURE_COLS]).alias("features"))
+    scaled = standardize(features, FEATURE_COLS, stats)
+    out = to_feature_array(scaled, FEATURE_COLS)
     out.write.mode("overwrite").option("compression", "snappy").parquet(OUTPUT_PATH)  # pass 2
 
     logger.info("NYC preprocessing done")

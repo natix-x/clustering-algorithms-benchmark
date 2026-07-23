@@ -22,16 +22,16 @@ parallax > 0 is kept (negative parallax is noise). Requiring the GSP-Phot column
 only stars that have astrophysical parameters, which is a large but sane subset.
 """
 
-import math
-
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+from data_preprocessing.common.features import compute_stats, standardize, to_feature_array
+from data_preprocessing.common.spark import build_session
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-INPUT_PATH = "file:///net/pr2/projects/plgrid/plggclustering25/gaia_dr3_data/gaia_dr3_dataset/"
+INPUT_PATH = "file:///net/pr2/projects/plgrid/plggclustering25/gaia_data/gaia_dr3_dataset/"
 OUTPUT_PATH = "file:///net/pr2/projects/plgrid/plggclustering25/gaia_data_preprocessed"
 
 # Raw columns to read (ra/dec/parallax feed the Cartesian transform; the rest are kept).
@@ -48,8 +48,6 @@ FEATURE_COLS = [
     "logg_gspphot",
     "mh_gspphot",
 ]
-
-MAX_PARTITION_BYTES = 256 * 1024 * 1024  # 256 MB read split -> output file size
 
 
 def _read_raw(spark: SparkSession) -> DataFrame:
@@ -79,28 +77,8 @@ def _to_cartesian(df: DataFrame) -> DataFrame:
     )
 
 
-def compute_stats(df: DataFrame):
-    """One pass: per-feature mean/std + row count (for standardization + logging)."""
-    agg = [F.count(F.lit(1)).alias("__n")]
-    agg += [F.mean(c).alias(f"{c}__m") for c in FEATURE_COLS]
-    agg += [F.stddev(c).alias(f"{c}__s") for c in FEATURE_COLS]
-    return df.select(*agg).first()
-
-
-def standardize(df: DataFrame, stats) -> DataFrame:
-    """Z-score each feature: (c - mean) / std. Engine-neutral, no ML VectorUDT."""
-    scaled = []
-    for c in FEATURE_COLS:
-        mean = stats[f"{c}__m"]
-        std = stats[f"{c}__s"]
-        std = std if std and std > 0 else 1.0  # guard constant columns
-        scaled.append(((F.col(c) - F.lit(mean)) / F.lit(std)).alias(c))
-    return df.select(*scaled)
-
-
 def main() -> None:
-    spark = SparkSession.builder.appName("Gaia_Data_Prep").getOrCreate()
-    spark.conf.set("spark.sql.files.maxPartitionBytes", str(MAX_PARTITION_BYTES))
+    spark = build_session("Gaia_Data_Prep")
 
     raw = _read_raw(spark)
     raw_count = raw.count()  # pre-filter total (cheap: Parquet footers, no filter yet)
@@ -109,11 +87,11 @@ def main() -> None:
 
     # Two lazy passes (no cache): pass 1 = stats, pass 2 = write. Deterministic pipeline,
     # so both passes see identical rows.
-    stats = compute_stats(features)  # pass 1
+    stats = compute_stats(features, FEATURE_COLS)  # pass 1
     kept = stats["__n"]
 
-    scaled = standardize(features, stats)
-    out = scaled.select(F.array(*[F.col(c) for c in FEATURE_COLS]).alias("features"))
+    scaled = standardize(features, FEATURE_COLS, stats)
+    out = to_feature_array(scaled, FEATURE_COLS)
     out.write.mode("overwrite").option("compression", "snappy").parquet(OUTPUT_PATH)  # pass 2
 
     logger.info("Gaia preprocessing done")
