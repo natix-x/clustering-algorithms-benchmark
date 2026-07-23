@@ -15,6 +15,18 @@ analysis = [
     "matplotlib>=3.7",
 ]
 
+# Dataset preprocessing jobs (python/data_preprocessing/). On Ares, pyspark comes from the
+# Spark module, not pip — this extra is for running/linting the jobs and helper scripts
+# locally. numpy: BIGANN binary parsing; pyarrow: parquet footer/schema inspection;
+# geopandas + pandas: taxi-zone centroid lookup (build_zone_centroids.py).
+preprocessing = [
+    "pyspark>=3.3,<3.4",
+    "numpy>=1.24",
+    "pyarrow>=12.0",
+    "pandas>=2.0",
+    "geopandas>=0.14",
+]
+
 # Dev tools (PEP 735 dependency group); installed by default with `uv sync`.
 [dependency-groups]
 dev = [

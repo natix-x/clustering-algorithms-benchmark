@@ -5,6 +5,7 @@ Part of the Master thesis 'Performance and efficiency issues of the use of Big D
 ## Table of contents
 * [General info](#general-info)
 * [Architecture](#architecture)
+* [Datasets](#datasets)
 * [Project structure](#project-structure)
 * [Requirements](#requirements)
 * [Usage](#usage)
@@ -174,7 +175,7 @@ sequenceDiagram
   end
 
   box Węzły Obliczeniowe 
-    participant Workers as Spark Worker
+    participant Workers as Spark Workers
     participant Executors as Spark Executors
   end
 
@@ -312,6 +313,13 @@ jar cf ../flink-clustering-metrics-reporter.jar \
   META-INF/services/org.apache.flink.metrics.reporter.MetricReporterFactory
 cp ../flink-clustering-metrics-reporter.jar "$SCRATCH/flink-1.17.1/lib/"
 ```
+
+## Datasets
+
+The benchmark runs on five public datasets. Their descriptions, sizes,
+licenses, and preprocessing are documented in [`datasets/README.md`](datasets/README.md);
+the preprocessing jobs live in `python/data_preprocessing/` with SLURM scripts in
+`sbatch_scripts/`.
 
 ## Project structure
 
