@@ -8,8 +8,6 @@ malformed rows, and writes an ENGINE-NEUTRAL Parquet dataset:
     emb : array<float>   (exactly 1024 elements, no null / NaN / Inf)
 """
 
-from __future__ import annotations
-
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 

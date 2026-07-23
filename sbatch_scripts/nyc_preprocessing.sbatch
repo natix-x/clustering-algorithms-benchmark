@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH -J cohere-prep
+#SBATCH -J nyc-prep
 #SBATCH -N 1
 #SBATCH --cpus-per-task=48
 #SBATCH --mem=180G
@@ -15,9 +15,9 @@ module purge && module load spark/3.3.2-hadoop-3.2-java-11
 
 # SLURM copies the batch script to a spool dir, so $0/BASH_SOURCE point there — useless
 # for locating repo files. Use $SLURM_SUBMIT_DIR (the dir you ran `sbatch` from). Submit
-# from the repo root: `sbatch python/data_preprocessing/sbatch_scripts/cohere_preprocess.sbatch`.
+# from the repo root: `sbatch sbatch_scripts/nyc_preprocessing.sbatch`.
 REPO_ROOT="$SLURM_SUBMIT_DIR"
-PY_SCRIPT="$REPO_ROOT/python/data_preprocessing/cohere_preprocess.py"
+PY_SCRIPT="$REPO_ROOT/python/data_preprocessing/nyc_data/nyc_preprocessing.py"
 export PYTHONPATH="$REPO_ROOT/python:${PYTHONPATH:-}"
 
 if [ ! -f "$PY_SCRIPT" ]; then
@@ -25,12 +25,10 @@ if [ ! -f "$PY_SCRIPT" ]; then
     exit 1
 fi
 
-# local[N]: N = concurrent read tasks. `emb` is array<float> -> Spark falls back to the
-# non-vectorized Parquet reader, which buffers a WHOLE row group per task. With big row
-# groups, local[48] blew the heap (OOM). Cap concurrency so N x row_group_size fits in
-# the 150g heap. Drop further (local[8]) if it still OOMs.
+# Rows are small numeric records (no giant arrays like Cohere) -> no per-row-group OOM,
+# so use all cores. Single-node local mode; spark-submit sets the master.
 spark-submit \
-  --master "local[16]" \
+  --master "local[${SLURM_CPUS_PER_TASK}]" \
   --driver-memory 150g \
   --conf spark.driver.maxResultSize=8g \
   "$PY_SCRIPT"
