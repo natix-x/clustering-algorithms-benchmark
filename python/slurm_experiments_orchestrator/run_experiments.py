@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import subprocess
 from pathlib import Path
@@ -12,9 +11,9 @@ from slurm_experiments_orchestrator import launchers
 from slurm_experiments_orchestrator.common.experiments_generator import generate_experiments
 from slurm_experiments_orchestrator.common.yaml_validator import validate_yaml_config_file
 from slurm_experiments_orchestrator.slurm.jobs_writer import JobWriter
+from utils.logger import get_logger
 
-logging.basicConfig(level=logging.DEBUG, format="%(message)s")
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def main() -> None:

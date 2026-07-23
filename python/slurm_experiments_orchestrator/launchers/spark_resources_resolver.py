@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import logging
+from utils.logger import get_logger
 from dataclasses import dataclass
 
 from slurm_experiments_orchestrator.common.yaml_validator import parse_mem_gb
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 #: Fraction of an executor's slice reserved as off-heap overhead (heap = slice/1.10,
 #: overhead = heap * 0.10).

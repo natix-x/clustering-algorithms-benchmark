@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import logging
+from utils.logger import get_logger
 import os
 
 from slurm_experiments_orchestrator.common.experiments_generator import Experiment
@@ -8,7 +8,7 @@ from slurm_experiments_orchestrator.common.config import FLINK_RESOURCE_KEYS
 from slurm_experiments_orchestrator.launchers.base_launcher import Launcher
 from slurm_experiments_orchestrator.launchers.sbatch_templates.flink_sbatch_template import FLINK_SBATCH_TEMPLATE
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class FlinkLauncher(Launcher):

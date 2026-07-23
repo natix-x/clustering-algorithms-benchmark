@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import logging
+from utils.logger import get_logger
 import re
 
 from slurm_experiments_orchestrator.common.config import (
@@ -11,7 +11,7 @@ from slurm_experiments_orchestrator.common.config import (
     REQUIRED_MATRIX_KEYS,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def parse_mem_gb(mem_str: str) -> int:

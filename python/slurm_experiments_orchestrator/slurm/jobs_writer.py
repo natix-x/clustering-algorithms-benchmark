@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-import logging
+from utils.logger import get_logger
 from collections import defaultdict
 from pathlib import Path
 
 from slurm_experiments_orchestrator.common.experiments_generator import Experiment
 from slurm_experiments_orchestrator.launchers.base_launcher import Launcher
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class JobWriter:

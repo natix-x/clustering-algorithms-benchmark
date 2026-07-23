@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import logging
+from utils.logger import get_logger
 import os
 
 from slurm_experiments_orchestrator.common.experiments_generator import Experiment
@@ -12,7 +12,7 @@ from slurm_experiments_orchestrator.launchers.spark_resources_resolver import (
 )
 from slurm_experiments_orchestrator.launchers.sbatch_templates.spark_sbatch_template import SBATCH_TEMPLATE
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _resolve_resources(experiment: Experiment) -> SparkResources:

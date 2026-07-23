@@ -3,12 +3,12 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
-import logging
+from utils.logger import get_logger
 import os
 from dataclasses import dataclass
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
