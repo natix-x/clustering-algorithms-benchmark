@@ -135,7 +135,7 @@ submit_job() {{
     "$FLINK_HOME/bin/flink" run \
       -m "$JM_HOST:8081" \
       -p "{parallelism}" \
-      "{jar}" --config "$CONFIG_PATH"
+      "{jar_path}" --config "$CONFIG_PATH"
 }}
 
 echo "=== RUN: $RUN_ID  (Job=$SLURM_JOB_ID) ==="

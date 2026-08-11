@@ -55,3 +55,12 @@ def spark_yaml() -> dict:
 def flink_yaml() -> dict:
     """A minimal, valid Flink matrix config (fresh copy per test)."""
     return _base_yaml(copy.deepcopy(_FLINK_MATRIX), copy.deepcopy(_FLINK_SBATCH))
+
+
+@pytest.fixture
+def parquet_yaml(spark_yaml) -> dict:
+    """Spark matrix reading a preprocessed embedding set instead of synthetic data."""
+    spark_yaml["experiment_matrix"]["datasets"] = [
+        {"type": "parquet", "params": {"path": "/data/cohere", "featureColumnName": "emb"}}
+    ]
+    return spark_yaml

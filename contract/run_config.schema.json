@@ -28,7 +28,7 @@
         },
         "params": {
           "type": "object",
-          "description": "Free-form source params (e.g. numPoints, numPartitions, seed, path). Each engine parses what it needs."
+          "description": "Free-form source params (e.g. numPoints, numPartitions, seed, path, weightColumn). Each engine parses what it needs. weightColumn names a per-row weight (how many points the row stands for); absent means every row weighs 1.0."
         }
       }
     },
@@ -39,11 +39,11 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Algorithm name, e.g. 'kmeans' | 'pam' | 'fastpam' | 'clara' | 'dbscan' | 'griddbscan'. Resolved by each engine's algorithm registry."
+          "description": "Algorithm name, e.g. 'kmeans' | 'bisectingkmeans' | 'pam' | 'fastpam' | 'fasterpam' | 'clara' | 'alternate' | 'pamae' | 'dbscanpp' | 'dbscanexact'. Resolved by each engine's algorithm registry."
         },
         "params": {
           "type": "object",
-          "description": "Free-form algorithm params (e.g. k, maxIter, distance, eps, minPts, seed)."
+          "description": "Free-form algorithm params (e.g. k, maxIter, distance, geometry, eps, minPts, coreSampleFraction, sampling, assign, inner, poolSize, refineIters, refine, m0, seed)."
         }
       }
     },

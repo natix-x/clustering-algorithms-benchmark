@@ -27,12 +27,48 @@ This generates one independent SLURM job per combination, each tagged with a uni
 - `nodes: [int]` The number of physical cluster nodes allocated per SLURM job (e.g., `[2, 4, 8]`)
 - `resources: [dict]` Resource profiles (see [Resource management](#resource-management))
 - `algorithms: [{name, params}]` (e.g., `kmeans` with params: `{k, maxIter}`).
-- `datasets: [{type, params}]` (e.g., `synthetic` with `params: {numPoints}`).
+- `datasets: [{type, params}]` (e.g., `synthetic` with `params: {numPoints}`, see [Datasets](#datasets)).
 
 ### `evaluation_config`
 - `metrics` List of computed metrics (e.g., `silhouette`, `clusterSizes`, `noiseFraction`).
 - `sampleSize` Sample size for computationally expensive metrics.
 - `seed` RNG (random number generator) seed for reproducible sampling.
+
+## Datasets
+
+`params` are passed to the engine's DataSource unchanged. Env vars (`$SCRATCH`, ...) are expanded
+at generation time, at any depth.
+
+### `type: synthetic`
+
+| param | required | meaning |
+|---|:---:|---|
+| `numPoints` | ✔ | Generated row count. |
+| `seed` | – | RNG seed (default 42). |
+| `numPartitions` | – | Generated partition count; injected from the resource profile if absent. |
+
+### `type: parquet`
+
+Reads the preprocessed datasets (see `datasets/README.md`). Each is one array column: `features`
+for the tabular sets (Gaia, NYC), `emb` for the embedding ones (tech-news, monet, Cohere) — hence
+`featureColumnName` is required.
+
+| param | required | meaning |
+|---|:---:|---|
+| `path` | ✔ | Parquet file or directory. |
+| `featureColumnName` | ✔ | Column holding the vector (`array<float>`, `array<double>` or an ML `Vector`). |
+| `sampleFraction` | – | Fraction in (0, 1]; random subset |
+| `seed` | – | Seed of `sampleFraction` (default 42). |
+| `numPartitions` | – | Partition count after the read (coalesce down / shuffle up). Injected from the resource profile if absent; set it explicitly for partition-strategy sweeps. |
+| `weightColumn` | – | Per-row weight (how many points the row stands for). Absent = 1.0 each. |
+
+```yaml
+datasets:
+  - {type: parquet, params: {path: "/net/pr2/projects/plgrid/plggclustering25/gaia_data_preprocessed",
+                             featureColumnName: features, sampleFraction: 0.01}}
+  - {type: parquet, params: {path: "/net/pr2/projects/plgrid/plggclustering25/cohere_vectores_data_preprocessed",
+                             featureColumnName: emb, sampleFraction: 0.05}}
+```
 
 ## Environment (`sbatch_config`)
 

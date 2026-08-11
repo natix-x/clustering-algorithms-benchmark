@@ -29,10 +29,7 @@ def generate_experiments(parsed_yaml_config_file: dict) -> list[Experiment]:
     counters: dict[int, int] = {}
 
     for combo in itertools.product(*(matrix[k] for k in keys)):
-        cell = {
-            k: (os.path.expandvars(v) if isinstance(v, str) else v)
-            for k, v in zip(keys, combo)
-        }
+        cell = {k: _expand_vars(v) for k, v in zip(keys, combo)}
         nodes     = cell["nodes"]
         base_hash = _stable_hash(cell)
 
@@ -50,6 +47,18 @@ def generate_experiments(parsed_yaml_config_file: dict) -> list[Experiment]:
         f"(axes: {[k for k in keys]}, repetitions: {repetitions})"
     )
     return experiments
+
+
+def _expand_vars(obj: Any) -> Any:
+    """Expand env vars in every string, at any depth — dataset paths live in nested params
+    (`datasets[i].params.path`), so a top-level-only expansion would leave `$SCRATCH` literal."""
+    if isinstance(obj, str):
+        return os.path.expandvars(obj)
+    if isinstance(obj, dict):
+        return {k: _expand_vars(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_expand_vars(v) for v in obj]
+    return obj
 
 
 def _normalize(obj: Any) -> Any:

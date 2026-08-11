@@ -19,12 +19,12 @@ class FlinkLauncher(Launcher):
         self, experiment: Experiment, output_dir: str, yaml_config: dict
     ) -> dict:
         engine_conf = dict(yaml_config.get("flink_config", {}))
-        evaluation  = dict(yaml_config.get("evaluation_config", {}))
-        sbatch_def  = yaml_config.get("sbatch_config", {})
-        res         = experiment.cell["resources"]
+        evaluation = dict(yaml_config.get("evaluation_config", {}))
+        sbatch_config = yaml_config.get("sbatch_config", {})
+        resources = experiment.cell["resources"]
 
-        tms_per_node = int(res["tm_per_node"])
-        slots_per_tm = int(res["cpus_per_task"])
+        tms_per_node = int(resources["tm_per_node"])
+        slots_per_tm = int(resources["cpus_per_task"])
         parallelism = experiment.nodes * tms_per_node * slots_per_tm
         logger.debug(
             f"[flink] {experiment.run_id}: {experiment.nodes * tms_per_node} TM "
@@ -32,20 +32,22 @@ class FlinkLauncher(Launcher):
         )
 
         experiment_metadata = {
-            "nodes":                 str(experiment.nodes),
-            "cpus_per_task":         str(res["cpus_per_task"]),
-            "tm_per_node":           str(tms_per_node),
-            "total_taskmanagers":    str(experiment.nodes * tms_per_node),
+            "nodes": str(experiment.nodes),
+            "cpus_per_task": str(resources["cpus_per_task"]),
+            "tm_per_node": str(tms_per_node),
+            "total_taskmanagers":str(experiment.nodes * tms_per_node),
             "slots_per_taskmanager": str(slots_per_tm),
-            "parallelism":           str(parallelism),
-            "mem":                   str(res["mem"]),
-            "tm_mem_gb":             str(res["tm_mem_gb"]),
-            "jm_mem_gb":             str(res["jm_mem_gb"]),
-            "walltime":              str(sbatch_def.get("walltime", "")),
-            "partition":             str(sbatch_def.get("partition", "")),
-            "flink_module":          str(sbatch_def.get("flink_module", "")),
+            "parallelism": str(parallelism),
+            "mem": str(resources["mem"]),
+            "tm_mem_gb": str(resources["tm_mem_gb"]),
+            "jm_mem_gb": str(resources["jm_mem_gb"]),
+            "walltime": str(sbatch_config.get("walltime", "")),
+            "partition": str(sbatch_config.get("partition", "")),
+            "flink_module": str(sbatch_config.get("flink_module", "")),
         }
 
+        # Always overwritten, for every dataset type: FlinkClusteringJob reads
+        # dataset.params.numPartitions as the job parallelism, not as a source knob.
         dataset = dict(experiment.cell["datasets"])
         dataset["params"] = {**dataset.get("params", {}), "numPartitions": parallelism}
 
@@ -73,10 +75,10 @@ class FlinkLauncher(Launcher):
             k: v for k, v in sbatch_def.items()
             if k not in self.resource_keys
         }
-        jar          = os.path.expandvars(yaml_config["jar_path"])
-        res          = experiment.cell["resources"]
-        tms_per_node = int(res["tm_per_node"])
-        slots_per_tm = int(res["cpus_per_task"])
+        jar_path = os.path.expandvars(yaml_config["jar_path"])
+        resources = experiment.cell["resources"]
+        tms_per_node = int(resources["tm_per_node"])
+        slots_per_tm = int(resources["cpus_per_task"])
         num_partitions = experiment.nodes * tms_per_node * slots_per_tm  # = total slots
 
         return FLINK_SBATCH_TEMPLATE.format(
@@ -86,12 +88,12 @@ class FlinkLauncher(Launcher):
             config_path=run_config_path,
             log_dir=log_dir,
             output_dir=output_dir,
-            jar=jar,
-            mem=res["mem"],
+            jar_path=jar_path,
+            mem=resources["mem"],
             tms_per_node=tms_per_node,
             slots_per_tm=slots_per_tm,
-            tm_mem=int(res["tm_mem_gb"]),
-            jm_mem=int(res["jm_mem_gb"]),
+            tm_mem=int(resources["tm_mem_gb"]),
+            jm_mem=int(resources["jm_mem_gb"]),
             parallelism=num_partitions,
             **non_resource_defaults,
         )

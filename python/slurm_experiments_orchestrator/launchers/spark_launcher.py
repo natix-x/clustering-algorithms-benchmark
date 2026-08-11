@@ -26,51 +26,52 @@ class SparkLauncher(Launcher):
     def build_run_config(
         self, experiment: Experiment, output_dir: str, yaml_config: dict
     ) -> dict:
-        spark_conf      = dict(yaml_config.get("spark_config", {}))
-        evaluation      = dict(yaml_config.get("evaluation_config", {}))
+        spark_conf = dict(yaml_config.get("spark_config", {}))
+        evaluation = dict(yaml_config.get("evaluation_config", {}))
         sbatch_config = yaml_config.get("sbatch_config", {})
 
-        res       = experiment.cell["resources"]
-        spark_res = _resolve_resources(experiment)
+        resources = experiment.cell["resources"]
+        spark_resources = _resolve_resources(experiment)
         num_partitions = (
-            experiment.nodes * int(res["executors_per_node"]) * spark_res.executor_cores
+            experiment.nodes * int(resources["executors_per_node"]) * spark_resources.executor_cores
         )
         logger.debug(
-            f"[spark] {experiment.run_id}: {spark_res.executors_per_node} exec/node "
-            f"x {spark_res.executor_cores} cores, {num_partitions} partitions"
+            f"[spark] {experiment.run_id}: {spark_resources.executors_per_node} exec/node "
+            f"x {spark_resources.executor_cores} cores, {num_partitions} partitions"
         )
 
         experiment_metadata = {
-            "nodes":              str(experiment.nodes),
-            "cpus_per_task":      str(res["cpus_per_task"]),
-            "executors_per_node": str(res["executors_per_node"]),
-            "total_executors":    str(experiment.nodes * int(res["executors_per_node"])),
-            "mem":                str(res["mem"]),
-            "walltime":           str(sbatch_config.get("walltime", "")),
-            "partition":          str(sbatch_config.get("partition", "")),
-            "spark_module":       str(sbatch_config.get("spark_module", "")),
-            "worker_mem_gb":      str(spark_res.worker_pool_gb),
-            "executor_mem_gb":    str(spark_res.executor_gb),
-            "executor_overhead_mb": str(spark_res.executor_overhead_mb),
-            "executor_cores":     str(spark_res.executor_cores),
-            "driver_mem_gb":      str(spark_res.driver_gb),
-            "master_mem_gb":      str(spark_res.master_gb),
-            "num_partitions":     str(num_partitions),
+            "nodes": str(experiment.nodes),
+            "cpus_per_task": str(resources["cpus_per_task"]),
+            "executors_per_node": str(resources["executors_per_node"]),
+            "total_executors": str(experiment.nodes * int(resources["executors_per_node"])),
+            "mem": str(resources["mem"]),
+            "walltime": str(sbatch_config.get("walltime", "")),
+            "partition": str(sbatch_config.get("partition", "")),
+            "spark_module": str(sbatch_config.get("spark_module", "")),
+            "worker_mem_gb": str(spark_resources.worker_pool_gb),
+            "executor_mem_gb": str(spark_resources.executor_gb),
+            "executor_overhead_mb": str(spark_resources.executor_overhead_mb),
+            "executor_cores": str(spark_resources.executor_cores),
+            "driver_mem_gb": str(spark_resources.driver_gb),
+            "master_mem_gb": str(spark_resources.master_gb),
+            "num_partitions": str(num_partitions),
         }
 
-        # Inject the derived partition count into the dataset params so the Spark job
-        # reads it (contract: dataset.params.numPartitions).
+        # Inject the derived partition count (contract: dataset.params.numPartitions — synthetic
+        # generates that many, parquet re-partitions after the read). An explicit value wins, so a
+        # partition-strategy sweep can pin its own count.
         dataset = dict(experiment.cell["datasets"])
-        dataset["params"] = {**dataset.get("params", {}), "numPartitions": num_partitions}
+        dataset["params"] = {"numPartitions": num_partitions, **dataset.get("params", {})}
 
         return {
-            "runId":              experiment.run_id,
-            "profile":            "ares",
-            "outputDir":          output_dir,
-            "dataset":            dataset,
-            "algorithm":          dict(experiment.cell["algorithms"]),
-            "evaluation":         evaluation,
-            "spark_config":       spark_conf,
+            "runId": experiment.run_id,
+            "profile": "ares",
+            "outputDir": output_dir,
+            "dataset": dataset,
+            "algorithm": dict(experiment.cell["algorithms"]),
+            "evaluation": evaluation,
+            "spark_config": spark_conf,
             "experimentMetadata": experiment_metadata,
         }
 
@@ -87,9 +88,9 @@ class SparkLauncher(Launcher):
             k: v for k, v in sbatch_config.items()
             if k not in ("executors_per_node", "cpus_per_task", "mem")
         }
-        jar       = os.path.expandvars(yaml_config["jar_path"])
-        res       = experiment.cell["resources"]
-        spark_res = _resolve_resources(experiment)
+        jar_path = os.path.expandvars(yaml_config["jar_path"])
+        resources = experiment.cell["resources"]
+        spark_resources = _resolve_resources(experiment)
 
         return SBATCH_TEMPLATE.format(
             name=yaml_config["name"],
@@ -98,14 +99,14 @@ class SparkLauncher(Launcher):
             config_path=run_config_path,
             log_dir=log_dir,
             output_dir=output_dir,
-            jar=jar,
-            cpus_per_task=int(res["cpus_per_task"]),
-            mem=res["mem"],
-            executors_per_node=int(res["executors_per_node"]),
-            worker_mem=spark_res.worker_pool_gb,
-            driver_mem=spark_res.driver_gb,
-            executor_mem=spark_res.executor_gb,
-            executor_cores=spark_res.executor_cores,
-            executor_overhead_mb=spark_res.executor_overhead_mb,
+            jar=jar_path,
+            cpus_per_task=int(resources["cpus_per_task"]),
+            mem=resources["mem"],
+            executors_per_node=int(resources["executors_per_node"]),
+            worker_mem=spark_resources.worker_pool_gb,
+            driver_mem=spark_resources.driver_gb,
+            executor_mem=spark_resources.executor_gb,
+            executor_cores=spark_resources.executor_cores,
+            executor_overhead_mb=spark_resources.executor_overhead_mb,
             **non_resource_defaults,
         )

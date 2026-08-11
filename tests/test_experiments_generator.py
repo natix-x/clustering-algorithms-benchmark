@@ -54,3 +54,12 @@ def test_cell_carries_axis_values(spark_yaml):
     assert exp.cell["algorithms"]["name"] == "kmeans"
     assert exp.cell["datasets"]["type"] == "synthetic"
     assert "resources" in exp.cell
+
+
+def test_env_vars_expand_inside_dataset_params(spark_yaml, monkeypatch):
+    monkeypatch.setenv("SCRATCH", "/scratch/me")
+    spark_yaml["experiment_matrix"]["datasets"] = [
+        {"type": "parquet", "params": {"path": "$SCRATCH/gaia", "featureColumnName": "features"}}
+    ]
+    exp = generate_experiments(spark_yaml)[0]
+    assert exp.cell["datasets"]["params"]["path"] == "/scratch/me/gaia"

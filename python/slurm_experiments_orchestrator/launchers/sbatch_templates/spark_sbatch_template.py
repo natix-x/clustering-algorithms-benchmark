@@ -170,7 +170,7 @@ submit_job() {{
       --conf spark.executor.memoryOverhead={executor_overhead_mb}m \
       --conf spark.cores.max="$TOTAL_CORES" \
       --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
-      "{jar}" --config "$CONFIG_PATH"
+      "{jar_path}" --config "$CONFIG_PATH"
 }}
 
 echo "=== RUN: $RUN_ID  (Job=$SLURM_JOB_ID) ==="

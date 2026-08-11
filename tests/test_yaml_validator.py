@@ -113,3 +113,42 @@ def test_entry_must_be_dict(spark_yaml, axis):
 def test_flink_config_valid(flink_yaml):
     from slurm_experiments_orchestrator.common.config import FLINK_RESOURCE_KEYS
     validate_yaml_config_file(flink_yaml, resource_keys=FLINK_RESOURCE_KEYS)
+
+
+# --- dataset params (per source type) ---
+
+def test_parquet_dataset_passes(parquet_yaml):
+    _validate(parquet_yaml)  # must not raise
+
+
+@pytest.mark.parametrize("drop", ["path", "featureColumnName"])
+def test_parquet_missing_required_param_raises(parquet_yaml, drop):
+    del parquet_yaml["experiment_matrix"]["datasets"][0]["params"][drop]
+    with pytest.raises(KeyError):
+        _validate(parquet_yaml)
+
+
+def test_synthetic_missing_num_points_raises(spark_yaml):
+    del spark_yaml["experiment_matrix"]["datasets"][0]["params"]["numPoints"]
+    with pytest.raises(KeyError):
+        _validate(spark_yaml)
+
+
+@pytest.mark.parametrize("bad", [0, -0.5, 1.5, 2])
+def test_sample_fraction_out_of_range_raises(parquet_yaml, bad):
+    parquet_yaml["experiment_matrix"]["datasets"][0]["params"]["sampleFraction"] = bad
+    with pytest.raises(ValueError):
+        _validate(parquet_yaml)
+
+
+@pytest.mark.parametrize("key", ["numPartitions"])
+@pytest.mark.parametrize("bad", [0, -1, 1.5, True])
+def test_positive_dataset_params_are_checked(parquet_yaml, key, bad):
+    parquet_yaml["experiment_matrix"]["datasets"][0]["params"][key] = bad
+    with pytest.raises(ValueError):
+        _validate(parquet_yaml)
+
+
+def test_unknown_dataset_type_params_pass_through(spark_yaml):
+    spark_yaml["experiment_matrix"]["datasets"] = [{"type": "csv", "params": {"whatever": 1}}]
+    _validate(spark_yaml)  # must not raise

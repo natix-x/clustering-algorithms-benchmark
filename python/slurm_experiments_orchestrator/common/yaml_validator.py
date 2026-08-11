@@ -5,8 +5,10 @@ import re
 
 from slurm_experiments_orchestrator.common.config import (
     MEM_STRING_KEYS,
+    POSITIVE_DATASET_PARAMS,
     REQUIRED_ALGORITHM_KEYS,
     REQUIRED_DATASET_KEYS,
+    REQUIRED_DATASET_PARAMS,
     REQUIRED_KEYS,
     REQUIRED_MATRIX_KEYS,
 )
@@ -59,7 +61,27 @@ def validate_yaml_config_file(
     _validate_resources(parsed_yaml_config_file, resource_keys)
     _validate_matrix_entries(matrix["datasets"], "datasets", REQUIRED_DATASET_KEYS)
     _validate_matrix_entries(matrix["algorithms"], "algorithms", REQUIRED_ALGORITHM_KEYS)
+    _validate_dataset_params(matrix["datasets"])
     logger.debug("YAML config passed validation.")
+
+
+def _validate_dataset_params(datasets: list) -> None:
+    for i, entry in enumerate(datasets):
+        source = f"experiment_matrix.datasets[{i}]"
+        params = entry["params"]
+
+        missing = [k for k in REQUIRED_DATASET_PARAMS.get(entry["type"], ()) if k not in params]
+        if missing:
+            raise KeyError(f"{source}.params missing keys for type '{entry['type']}': {missing}")
+
+        for key in POSITIVE_DATASET_PARAMS:
+            value = params.get(key)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+                raise ValueError(f"{source}.params.{key} must be a positive integer, got {value!r}")
+
+        fraction = params.get("sampleFraction")
+        if fraction is not None and not (0 < float(fraction) <= 1):
+            raise ValueError(f"{source}.params.sampleFraction must be in (0, 1], got {fraction!r}")
 
 
 def _validate_matrix_entries(entries: list, axis: str, required_keys: tuple[str, ...]) -> None:

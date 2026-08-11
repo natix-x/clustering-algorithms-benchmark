@@ -94,3 +94,17 @@ def test_flink_render_has_parallelism(flink_yaml):
     )
     assert 'parallelism.default: 4' in sb
     assert '-p "4"' in sb
+
+
+def test_spark_parquet_gets_the_derived_partition_count(parquet_yaml):
+    exp = generate_experiments(parquet_yaml)[0]
+    params = launchers.get_launcher("spark").build_run_config(exp, "/tmp/o", parquet_yaml)["dataset"]["params"]
+    assert params["numPartitions"] == 4
+    assert params["featureColumnName"] == "emb"
+
+
+def test_spark_explicit_partition_count_is_kept(parquet_yaml):
+    parquet_yaml["experiment_matrix"]["datasets"][0]["params"]["numPartitions"] = 128
+    exp = generate_experiments(parquet_yaml)[0]
+    params = launchers.get_launcher("spark").build_run_config(exp, "/tmp/o", parquet_yaml)["dataset"]["params"]
+    assert params["numPartitions"] == 128
