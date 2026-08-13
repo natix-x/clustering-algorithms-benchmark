@@ -99,7 +99,7 @@ class SparkLauncher(Launcher):
             config_path=run_config_path,
             log_dir=log_dir,
             output_dir=output_dir,
-            jar=jar_path,
+            jar_path=jar_path,
             cpus_per_task=int(resources["cpus_per_task"]),
             mem=resources["mem"],
             executors_per_node=int(resources["executors_per_node"]),

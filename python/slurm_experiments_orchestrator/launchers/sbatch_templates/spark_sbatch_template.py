@@ -31,10 +31,13 @@ check_config() {{
 }}
 
 setup_dirs() {{
-    # Isolated per-run log + worker scratch dirs.
+    # Isolated per-run log + worker scratch dirs. SPARK_LOCAL_DIRS backs block-manager
+    # spill/cache (shuffle + MEMORY_AND_DISK persist) — node-local /tmp has ~0 free space
+    # on Ares compute nodes, so it must point at $SCRATCH instead.
     export SPARK_LOG_DIR="{output_dir}/spark_logs/$JOB_TAG"
     export SPARK_WORKER_DIR="/tmp/spark_work_$JOB_TAG"
-    mkdir -p "$SPARK_LOG_DIR" "$SPARK_WORKER_DIR"
+    export SPARK_LOCAL_DIRS="{output_dir}/spark_local/$JOB_TAG"
+    mkdir -p "$SPARK_LOG_DIR" "$SPARK_WORKER_DIR" "$SPARK_LOCAL_DIRS"
 }}
 
 configure_spark() {{
@@ -88,7 +91,7 @@ cleanup() {{
     echo ">>> Trap EXIT (kod=$EXIT_CODE) — cleaning up {run_id}"
     SPARK_IDENT_STRING="$JOB_TAG" \
         "$SPARK_HOME/sbin/stop-master.sh" 2>/dev/null || true
-    rm -rf "$SPARK_WORKER_DIR"
+    rm -rf "$SPARK_WORKER_DIR" "$SPARK_LOCAL_DIRS"
     exit $EXIT_CODE
 }}
 
