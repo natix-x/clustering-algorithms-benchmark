@@ -1,23 +1,28 @@
 """
 Preprocess the NYC TLC Yellow Taxi trip data for spatio-temporal clustering.
 
-Raw records have 19 columns; for clustering we build an 8-dim feature vector mixing
+Raw records have 19 columns; for clustering we build a 10-dim feature vector mixing
 time, space and trip attributes, then z-score standardize it. The output is an
 ENGINE-NEUTRAL Parquet dataset:
 
-    features : array<double>   (8 standardized features, see FEATURE_COLS for the order)
+    features : array<double>   (10 standardized features, see FEATURE_COLS for the order)
 
 The feature vector is stored as a plain double array on purpose — NOT a Spark ML
 VectorUDT. The benchmark runs on both Spark and Flink, so the cleaned data must be
 readable by both; each engine wraps `features` in its own vector type at load time.
+
+The records carry zone IDs, not coordinates (TLC dropped raw lat/lon), so BOTH ends of
+the trip are geocoded the same way: zone id -> zone-polygon centroid.
 
 Feature layout (index -> meaning):
     0 hour_sin, 1 hour_cos      cyclic hour-of-day  (00:00 == 24:00)
     2 dow_sin,  3 dow_cos       cyclic day-of-week  (Sun adjacent to Sat)
     4 pickup_latitude           pickup zone centroid  (spatial -> data skew on Manhattan)
     5 pickup_longitude
-    6 trip_distance             trip attributes -> heterogeneous vector
-    7 fare_amount
+    6 dropoff_latitude          dropoff zone centroid (trip = origin-destination pair)
+    7 dropoff_longitude
+    8 trip_distance             trip attributes -> heterogeneous vector
+    9 fare_amount
 """
 
 import glob
@@ -56,6 +61,8 @@ FEATURE_COLS = [
     "dow_cos",
     "pickup_latitude",
     "pickup_longitude",
+    "dropoff_latitude",
+    "dropoff_longitude",
     "trip_distance",
     "fare_amount",
 ]
@@ -80,6 +87,7 @@ def _read_trips(spark: SparkSession) -> DataFrame:
         return spark.read.parquet("file://" + path).select(
             F.col("tpep_pickup_datetime").cast("timestamp").alias("pickup_ts"),
             F.col("PULocationID").cast("long").alias("pu_location_id"),
+            F.col("DOLocationID").cast("long").alias("do_location_id"),
             F.col("trip_distance").cast("double").alias("trip_distance"),
             F.col("fare_amount").cast("double").alias("fare_amount"),
             F.col("passenger_count").cast("double").alias("passenger_count"),
@@ -98,7 +106,16 @@ def build_features(spark: SparkSession):
 
     # Drop nulls + physically impossible / outlier rows.
     trips = (
-        trips.na.drop(subset=["pickup_ts", "pu_location_id", "trip_distance", "fare_amount", "passenger_count"])
+        trips.na.drop(
+            subset=[
+                "pickup_ts",
+                "pu_location_id",
+                "do_location_id",
+                "trip_distance",
+                "fare_amount",
+                "passenger_count",
+            ]
+        )
         .where((F.col("trip_distance") > 0) & (F.col("trip_distance") < 100))
         .where((F.col("fare_amount") > 0) & (F.col("fare_amount") < 500))
         .where(F.col("passenger_count") > 0)
@@ -114,15 +131,36 @@ def build_features(spark: SparkSession):
         .withColumn("dow_cos", F.cos((dow - 1) * (_TWO_PI / 7)))
     )
 
-    # Spatial features: join zone centroids (tiny table -> broadcast, no shuffle).
+    # Spatial features: geocode BOTH trip ends through the same centroid table (tiny ->
+    # broadcast, no shuffle). One projection per end, so the two joins carry distinct
+    # column names and no self-join ambiguity arises.
     zones = spark.read.option("header", "true").csv(ZONES_PATH).select(
         F.col(ZONE_ID_COL).cast("long").alias("zone_id"),
-        F.col(ZONE_LAT_COL).cast("double").alias("pickup_latitude"),
-        F.col(ZONE_LON_COL).cast("double").alias("pickup_longitude"),
-    ).where(F.col("pickup_latitude").isNotNull() & F.col("pickup_longitude").isNotNull())
+        F.col(ZONE_LAT_COL).cast("double").alias("zone_lat"),
+        F.col(ZONE_LON_COL).cast("double").alias("zone_lon"),
+    ).where(F.col("zone_lat").isNotNull() & F.col("zone_lon").isNotNull())
 
-    joined = trips.join(
-        F.broadcast(zones), trips["pu_location_id"] == zones["zone_id"], "inner"
+    def end_zones(prefix: str) -> DataFrame:
+        return zones.select(
+            F.col("zone_id").alias(f"{prefix}_zone_id"),
+            F.col("zone_lat").alias(f"{prefix}_latitude"),
+            F.col("zone_lon").alias(f"{prefix}_longitude"),
+        )
+
+    pickup_zones, dropoff_zones = end_zones("pickup"), end_zones("dropoff")
+
+    # Inner joins: a trip is kept only if BOTH its zones have a centroid (the lookup has a
+    # few zones without geometry, e.g. "Unknown"/"N/A").
+    joined = (
+        trips.join(
+            F.broadcast(pickup_zones),
+            trips["pu_location_id"] == pickup_zones["pickup_zone_id"],
+            "inner",
+        ).join(
+            F.broadcast(dropoff_zones),
+            F.col("do_location_id") == F.col("dropoff_zone_id"),
+            "inner",
+        )
     )
     return joined.select(*FEATURE_COLS), raw_count
 
