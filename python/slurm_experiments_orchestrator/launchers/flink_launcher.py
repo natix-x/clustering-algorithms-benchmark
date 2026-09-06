@@ -5,10 +5,18 @@ import os
 
 from slurm_experiments_orchestrator.common.experiments_generator import Experiment
 from slurm_experiments_orchestrator.common.config import FLINK_RESOURCE_KEYS
-from slurm_experiments_orchestrator.launchers.base_launcher import Launcher
+from slurm_experiments_orchestrator.launchers.base_launcher import Launcher, evaluation_block
+from slurm_experiments_orchestrator.launchers.flink_resources_resolver import (
+    FlinkResources,
+    resources_from_cell,
+)
 from slurm_experiments_orchestrator.launchers.sbatch_templates.flink_sbatch_template import FLINK_SBATCH_TEMPLATE
 
 logger = get_logger(__name__)
+
+
+def _resolve_resources(experiment: Experiment) -> FlinkResources:
+    return resources_from_cell(experiment.cell["resources"])
 
 
 class FlinkLauncher(Launcher):
@@ -19,12 +27,13 @@ class FlinkLauncher(Launcher):
         self, experiment: Experiment, output_dir: str, yaml_config: dict
     ) -> dict:
         engine_conf = dict(yaml_config.get("flink_config", {}))
-        evaluation = dict(yaml_config.get("evaluation_config", {}))
+        evaluation = evaluation_block(yaml_config, experiment)
         sbatch_config = yaml_config.get("sbatch_config", {})
         resources = experiment.cell["resources"]
 
-        tms_per_node = int(resources["tm_per_node"])
-        slots_per_tm = int(resources["cpus_per_task"])
+        flink_resources = _resolve_resources(experiment)
+        tms_per_node = flink_resources.tms_per_node
+        slots_per_tm = flink_resources.slots_per_tm
         parallelism = experiment.nodes * tms_per_node * slots_per_tm
         logger.debug(
             f"[flink] {experiment.run_id}: {experiment.nodes * tms_per_node} TM "
@@ -41,6 +50,11 @@ class FlinkLauncher(Launcher):
             "mem": str(resources["mem"]),
             "tm_mem_gb": str(resources["tm_mem_gb"]),
             "jm_mem_gb": str(resources["jm_mem_gb"]),
+            "tm_process_mb": str(flink_resources.tm_process_mb),
+            "tm_network_max_mb": str(flink_resources.tm_network_max_mb),
+            "jm_process_mb": str(flink_resources.jm_process_mb),
+            "jm_heap_mb": str(flink_resources.jm_heap_mb),
+            "num_partitions": str(parallelism),
             "walltime": str(sbatch_config.get("walltime", "")),
             "partition": str(sbatch_config.get("partition", "")),
             "flink_module": str(sbatch_config.get("flink_module", "")),
@@ -77,8 +91,9 @@ class FlinkLauncher(Launcher):
         }
         jar_path = os.path.expandvars(yaml_config["jar_path"])
         resources = experiment.cell["resources"]
-        tms_per_node = int(resources["tm_per_node"])
-        slots_per_tm = int(resources["cpus_per_task"])
+        flink_resources = _resolve_resources(experiment)
+        tms_per_node = flink_resources.tms_per_node
+        slots_per_tm = flink_resources.slots_per_tm
         num_partitions = experiment.nodes * tms_per_node * slots_per_tm  # = total slots
 
         return FLINK_SBATCH_TEMPLATE.format(
@@ -92,8 +107,10 @@ class FlinkLauncher(Launcher):
             mem=resources["mem"],
             tms_per_node=tms_per_node,
             slots_per_tm=slots_per_tm,
-            tm_mem=int(resources["tm_mem_gb"]),
-            jm_mem=int(resources["jm_mem_gb"]),
+            tm_process_mb=flink_resources.tm_process_mb,
+            tm_network_max_mb=flink_resources.tm_network_max_mb,
+            jm_process_mb=flink_resources.jm_process_mb,
+            jm_heap_mb=flink_resources.jm_heap_mb,
             parallelism=num_partitions,
             **non_resource_defaults,
         )
