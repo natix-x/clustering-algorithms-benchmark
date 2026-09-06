@@ -53,13 +53,13 @@
       "properties": {
         "metrics": {
           "type": "array",
-          "items": { "type": "string", "enum": ["silhouette", "clusterSizes", "noiseFraction"] },
-          "description": "Which post-fit metrics to compute."
+          "items": { "type": "string", "enum": ["silhouette", "nClusters", "clusterSizes", "daviesBouldin", "calinskiHarabasz", "noiseFraction"] },
+          "description": "Which post-fit metrics to compute. ABSENT means the four defaults (silhouette, nClusters, clusterSizes, noiseFraction) — both engines default to that list; daviesBouldin and calinskiHarabasz are opt-in — so an empty array is the only way to request no evaluation at all."
         },
         "sampleSize": {
           "type": ["integer", "null"],
           "minimum": 1,
-          "description": "Optional cap for O(n^2) metrics like silhouette. null/absent = full dataset."
+          "description": "Cap on the points the O(n^2) silhouette scores. ABSENT means 10 000 on BOTH engines, so an omitted key measures the same thing on each; an explicit null means NO sampling and is a different request, refused above 50 000 labelled rows because it collects every labelled row to the driver. Absent and null are therefore NOT interchangeable."
         },
         "seed": {
           "type": "integer",

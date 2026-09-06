@@ -14,8 +14,9 @@ Preprocessing strictly filters invalid distances (`parallax > 0`) and removes NU
 ## NYC Taxi & Limousine Commission (TLC) Trip Record Data
 The TLC publishes several trip-record datasets (yellow taxi, green taxi, for-hire and high-volume for-hire vehicles). This work uses the yellow taxi records for January 2011 to January 2025: one row per trip with pickup/dropoff time and zone, passenger count, trip distance and fare. With ~1.39 billion cleaned rows it is the **largest dataset in this benchmark by record count** — the main large-scale test. Its trips are heavily concentrated in Manhattan, which also makes it a natural test for spatio-temporal clustering and for data skew (unevenly distributed data that overloads individual workers).
 
-Preprocessing filters outliers, removes NULLs, encodes time cyclically (sine/cosine), maps zones to geographic coordinates, and standardizes the clustering features:
-- after: 1,386,066,802 rows, ~8 GB
+Preprocessing filters outliers, removes NULLs, encodes time cyclically (sine/cosine), maps the pickup AND dropoff zones to geographic coordinates (the records carry zone ids, not coordinates — TLC dropped raw lat/lon), and standardizes the 10 clustering features:
+- before: 1,441,816,049 rows
+- after: 1,382,278,233 rows (dropped 59,537,816 = 4.1%), ~13 GB, 215 files
 
 * Source & License: [NYC Open Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) | CC BY 4.0
 * Citation: New York City Taxi and Limousine Commission, "TLC Trip Record Data," NYC Open Data, 2025. [Online]. Available: https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page. [Accessed: 23-Jul-2026].

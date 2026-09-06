@@ -39,6 +39,8 @@ Spark/Flink-specific detail.
 ---
 config:
   layout: dagre
+  themeVariables:
+    fontSize: 20px
 ---
 flowchart TB
     START_DOT((( ))) --> YAML
@@ -92,6 +94,8 @@ flowchart TB
 ---
 config:
   layout: dagre
+  themeVariables:
+    fontSize: 20px
 ---
 classDiagram
     direction TB
@@ -143,7 +147,10 @@ keeps runs isolated and reproducible.
 
 - **Spark** — a Master on the head node + one Worker per node (started via `srun`). The
   driver runs in client mode on the head node; executors are packed onto the Workers.
-- **Flink** — a JobManager on the head node + one TaskManager per task (via `srun`).
+- **Flink** — one TaskManager per task (via `srun`) plus a JobManager **daemon** on the
+  head node (`jobmanager.sh start`, **Session Mode**), coordinating only. `main()` (the
+  benchmark driver code) runs in a separate `flink run` client process — the direct
+  analogue of Spark's client-mode driver, and what `RunResult.driver*` actually samples.
   Job parallelism = total slots = `nodes × tm_per_node × cpus_per_task`.
 
 <p align="center">
@@ -154,8 +161,10 @@ keeps runs isolated and reproducible.
 
 <p align="center">
   <img src="media/flink_standalone_ares_cluster.png" alt="Flink standalone session cluster on Ares" width="80%"><br>
-  <em>Flink standalone session cluster on a SLURM allocation (Ares), shown from the
-  <strong>physical-node</strong> perspective.</em>
+  <em>Flink standalone cluster on a SLURM allocation (Ares), shown from the
+  <strong>physical-node</strong> perspective: JobManager daemon + one TaskManager per
+  node, with a separate <code>flink run</code> client as the driver (Session Mode,
+  current as of 5.09.2026 — see below).</em>
 </p>
 
 #### Spark bootstrap (inside each `<runId>.sbatch`)
@@ -164,70 +173,104 @@ keeps runs isolated and reproducible.
 down on any exit.
 
 ```mermaid
+---
+config:
+  themeVariables:
+    fontSize: 20px
+  sequence:
+    actorFontSize: 20
+    messageFontSize: 20
+    noteFontSize: 20
+    wrap: true
+---
 sequenceDiagram
   autonumber
   actor SLURM as SLURM
 
-  box Węzeł Główny 
-    participant Script as Skrypt sbatch
+  box Węzeł Główny
+    participant Skrypt as Skrypt sbatch
     participant Master as Spark Master
     participant App as Spark Driver
   end
 
-  box Węzły Obliczeniowe 
+  box Węzły Obliczeniowe
     participant Workers as Spark Workers
     participant Executors as Spark Executors
   end
 
-  SLURM->>Script: Przydział zasobów i inicjalizacja skryptu
-  activate Script
-  Note over Script,Executors: 1. Inicjalizacja środowiska
-  Script->>Script: Konfiguracja środowiska (host i porty Mastera, pula CPU/RAM, katalogi robocze, trap EXIT)
+  participant Storage as Współdzielony dysk
 
-  Note over Script,Executors: 2. Uruchomienie klastra
-  Script-)Master: Inicjalizacja Spark Mastera (start-master.sh)
+  SLURM->>Skrypt: Przydział zasobów i inicjalizacja skryptu
+  activate Skrypt
+  Note over Skrypt,Storage: 1. Inicjalizacja środowiska
+  Skrypt-)Storage: Utworzenie katalogów na dysku współdzielonym 
+
+  Note over Skrypt,Executors: 2. Uruchomienie klastra
+  Skrypt-)Master: Start Spark Mastera 
   activate Master
-  loop Oczekiwanie na gotowość Mastera
-    Script->>Script: Sprawdzanie logów 
-  end
-  Script-)Workers: Równoległe uruchomienie Workerów na węzłach
+  Skrypt-)Workers: Równoległy start Workerów na węzłach
   activate Workers
-  Workers-)Master: Rejestracja workerów w klastrze (deklaracja puli CPU i RAM)
+  Workers-)Master: Rejestracja workerów w klastrze
 
-  Note over Script,Executors: 3. Weryfikacja gotowości
+  Note over Skrypt,Executors: 3. Weryfikacja gotowości
   loop Weryfikacja stanu klastra
-    Script->>Master: Odpytanie REST API o status infrastruktury
-    Master-->>Script: Potwierdzenie dostępności N węzłów roboczych
+    Skrypt->>Master: Odpytanie REST API o status infrastruktury
+    Master-->>Skrypt: Potwierdzenie dostępności N węzłów roboczych
   end
 
-  Note over Script,Executors: 4. Wysłanie zadania i obliczenia
-  Script->>App: Delegacja zadania obliczeniowego (spark-submit w trybie client)
+  Note over Skrypt,Executors: 4. Wysłanie zadania i obliczenia
+  Skrypt->>App: Delegacja zadania obliczeniowego (spark-submit w trybie client)
   activate App
   App-)Master: Rejestracja kontekstu (SparkContext) i żądanie alokacji zasobów
   Master-)Workers: Zlecenie uruchomienia executorów na Workerach
-  Workers-)Executors: Uruchomienie procesów JVM (Spark Executors)
+  Workers-)Executors: Uruchomienie procesów JVM
   activate Executors
+  Executors->>Executors: Właściwe obliczenia
   Executors-->>App: Zwrócenie rezultatów i statusu wykonania
   deactivate Executors
-  App-->>Script: Zakończenie pracy
+  App-)Storage: Zapis pliku wynikowego
+  App-->>Skrypt: Zakończenie pracy sterownika
   deactivate App
 
-  Note over Script,Executors: 5. Sprzątanie (trap EXIT)
-  Script-)Master: Zakończenie procesu Mastera (stop-master.sh)
+  Note over Skrypt,Executors: 5. Sprzątanie 
+  Skrypt-)Master: Zatrzymanie procesu Spark Mastera
   deactivate Master
-  Script-)Workers: Usunięcie tymczasowych obszarów roboczych
   deactivate Workers
-  Script-->>SLURM: Zakończenie joba i zwolnienie przydzielonych węzłów
-  deactivate Script
+  Skrypt-)Storage: Usunięcie katalogów tymczasowych
+  Skrypt-->>SLURM: Zakończenie joba i zwolnienie przydzielonych węzłów
+  deactivate Skrypt
 ```
 
 #### Flink bootstrap (inside each `<runId>.sbatch`)
-TODO: przyjrzyj jeszcze raz ten diagram - czy ma sens krok z ususwaniem TaskManagerów osobno ??? 
 
-Standalone **session** cluster: `flink run` submits to the JobManager REST endpoint;
-the trap stops all daemons on exit.
+Standalone **Session Mode**: a JobManager **daemon** (`jobmanager.sh start`) coordinates
+the TaskManagers, and a separate `flink run` client runs `main()` (the benchmark driver,
+`BenchmarkRunner`) in its own JVM, blocking until the job finishes — the same shape as
+Spark's client-mode `spark-submit`. The client is therefore the driver, which is what
+`RunResult.driver*` samples; the JobManager only coordinates and does no algorithm work.
+
+Switched **from** Application Mode back to Session Mode on 5.09.2026: under Application
+Mode the jar reached remote TaskManagers as a *path* into a per-run `usrlib/` symlink
+tree, and each TaskManager had to resolve that path itself — the root cause behind two
+separate multi-node failure symptoms (`ClassNotFoundException` on
+`org.apache.flink.iteration.*`/`DenseVector`, and a `ClassCastException` from an
+unresolvable `SerializedLambda`). Session Mode's `flink run` client instead uploads the
+jar to the JobManager's **BlobServer**, and every TaskManager fetches the identical blob
+— no TaskManager ever resolves a path to the jar, so the classpath-symlink machinery is
+gone (`setup_entrypoint_classpath` is now a no-op beyond pinning the shared
+`$FLINK_HOME/lib`, kept as a named step for a future mode that might need it again).
 
 ```mermaid
+---
+config:
+  themeVariables:
+    fontSize: 20px
+  sequence:
+    actorFontSize: 20
+    messageFontSize: 20
+    noteFontSize: 20
+    wrap: true
+---
 sequenceDiagram
   autonumber
   actor SLURM as SLURM
@@ -235,7 +278,7 @@ sequenceDiagram
   box Węzeł Główny
     participant Skrypt as Skrypt sbatch
     participant JM as JobManager
-    participant Client as Flink Client
+    participant Client as flink run
   end
 
   box Węzły Obliczeniowe
@@ -247,38 +290,40 @@ sequenceDiagram
   SLURM->>Skrypt: Przydział zasobów i inicjalizacja skryptu
   activate Skrypt
   Note over Skrypt,Storage: 1. Inicjalizacja środowiska
-  Skrypt-)Storage: Wygenerowanie flink-conf.yaml (pamięć, porty, reporter metryk)
+  Skrypt-)Storage: Wygenerowanie flink-conf.yaml (pamięć, porty, reporter metryk, adres JobManagera)
 
   Note over Skrypt,TM: 2. Uruchomienie klastra
-  Skrypt-)JM: Uruchomienie procesu JobManagera
+  Skrypt-)JM: Start JobManagera w trybie sesyjnym
   activate JM
   Storage-->>JM: Załadowanie konfiguracji (otwarcie portów RPC/REST)
   Skrypt-)TM: Równoległy start N TaskManagerów
   activate TM
-  Storage-->>TM: Załadowanie spójnej konfiguracji
-  TM-)JM: Rejestracja dostępnych Task Slots
+  Storage-->>TM: Załadowanie tej samej konfiguracji
+  TM-)JM: Rejestracja dostępnych slotów obliczeniowych
 
   Note over Skrypt,TM: 3. Weryfikacja gotowości
   loop Weryfikacja stanu klastra
-    Skrypt->>JM: Odpytanie REST API (GET /overview) o stan zasobów
+    Skrypt->>JM: Odpytanie REST API (GET /overview) o stan TaskManagerów
     JM-->>Skrypt: Potwierdzenie dostępności oczekiwanej liczby TaskManagerów
   end
 
   Note over Skrypt,TM: 4. Wysłanie zadania i obliczenia
-  Skrypt->>Client: Zlecenie uruchomienia zadania (flink run)
+  Skrypt-)Client: Uruchomienie klienta flink run -c BenchmarkRunner 
   activate Client
-  Client-)JM: Wysłanie aplikacji (plik JAR) oraz JobGraph
-  JM-)TM: Dystrybucja podzadań (Tasks) do zarejestrowanych slotów
+  Client-)JM: Przesłanie jara do serwera obiektów binarnych i żądanie grafu zadania
+  JM-)TM: Dystrybucja pliku JAR i podzadań do zarejestrowanych slotów
+  TM->>TM: Właściwe obliczenia
   TM-)Storage: Asynchroniczny zapis logów i metryk klastrowania
-  Client-->>Skrypt: Potwierdzenie zakończenia
+  Client-)Storage: Zapis pliku wynikowego
+  Client-->>Skrypt: Zakończenie procesu klienta
   deactivate Client
 
-  Note over Skrypt,TM: 5. Sprzątanie (trap EXIT)
+  Note over Skrypt,TM: 5. Sprzątanie
   Skrypt-)TM: Zatrzymanie TaskManagerów
   deactivate TM
   Skrypt-)JM: Zatrzymanie JobManagera
   deactivate JM
-  Skrypt-)Storage: Usunięcie tymczasowych plików konfiguracyjnych klastra
+  Skrypt-)Storage: Usunięcie tymczasowych plików konfiguracyjnych i katalogów tymczasowych
   Skrypt-->>SLURM: Zakończenie joba i zwolnienie przydzielonych węzłów
   deactivate Skrypt
 ```

@@ -16,6 +16,7 @@ This generates one independent SLURM job per combination, each tagged with a uni
 | `jar_path` | ✔ | Path to the engine executable jar.                                                        |
 | `experiment_matrix` | ✔ | Experiment configs.                                                                       |
 | `repetitions` | ✔ | Positive integer; number of times to run each combination.                                |
+| `max_concurrent_runs` | – | Caps how many runs of this matrix execute at once. Unset = SLURM schedules everything at once. |
 | `sbatch_config` | – | SLURM/module defaults shared by every run                                                 |
 | `evaluation_config` | – | Clustering-quality metric settings.                                                       |
 | `spark_config` / `flink_config` | – | Additional engine properties (e.g., `spark.serializer: ...`).                                                                                          |
@@ -30,9 +31,15 @@ This generates one independent SLURM job per combination, each tagged with a uni
 - `datasets: [{type, params}]` (e.g., `synthetic` with `params: {numPoints}`, see [Datasets](#datasets)).
 
 ### `evaluation_config`
-- `metrics` List of computed metrics (e.g., `silhouette`, `clusterSizes`, `noiseFraction`).
-- `sampleSize` Sample size for computationally expensive metrics.
-- `seed` RNG (random number generator) seed for reproducible sampling.
+- `metrics` List of computed metrics: `silhouette`, `nClusters`, `clusterSizes`, `noiseFraction`.
+  Omitting the key (or the whole `evaluation_config`) means all four. To run fit-only:
+  ```yaml
+  evaluation_config:
+    metrics: []
+  ```
+- `sampleSize` Cap for the O(n²) silhouette. Default 10 000 on both engines.
+- `seed` Base RNG seed for the evaluation draw (default 42). The launcher writes `seed + rep` into
+  each generated run config, so every cell of one repetition shares a seed and repetitions differ.
 
 ## Datasets
 
@@ -59,7 +66,7 @@ for the tabular sets (Gaia, NYC), `emb` for the embedding ones (tech-news, monet
 | `featureColumnName` | ✔ | Column holding the vector (`array<float>`, `array<double>` or an ML `Vector`). |
 | `sampleFraction` | – | Fraction in (0, 1]; random subset |
 | `seed` | – | Seed of `sampleFraction` (default 42). |
-| `numPartitions` | – | Partition count after the read (coalesce down / shuffle up). Injected from the resource profile if absent; set it explicitly for partition-strategy sweeps. |
+| `numPartitions` | – | Partition count after the read (coalesce down / shuffle up). Injected from the resource profile if absent. |
 | `weightColumn` | – | Per-row weight (how many points the row stands for). Absent = 1.0 each. |
 
 ```yaml
@@ -81,23 +88,8 @@ SLURM arguments and module setups applied to all generated jobs:
 
 | Parameter | Engine | Description |
 |---|---|---|
-| `cpus_per_task` | Both | Total cores allocated per SLURM task (Worker / TaskManager pool). |
+| `cpus_per_task` | Both | Cores per SLURM task — cores per **executor** (Spark) / slots per **TaskManager** (Flink). Not split across instances. |
 | `mem` | Both | Total SLURM `--mem` per node (string, e.g., `"48G"`). |
-| `executors_per_node` / `tm_per_node` | Spark / Flink | Instances of Executors / TaskManagers packed onto one node. |
-| `worker_mem_gb` / `tm_mem_gb` | Spark / Flink | Total RAM pool granted to the Worker / TaskManager process. |
-| `driver_mem_gb` / `jm_mem_gb` | Spark / Flink | Master process heap (Driver / JobManager). |
-
-### Auto-Derived Values (Internal Logic)
-
-**Spark**
-- `executor_cores = cpus_per_task // executors_per_node`
-- `executor_mem ≈ (worker_mem_gb / executors_per_node) / 1.10` (Reserves 10% for off-heap overhead)
-- `spark.cores.max` = `nodes × executors_per_node × executor_cores`
-
-**Flink**
-- `total_slots = nodes × tm_per_node × cpus_per_task`
-- `parallelism = total_slots`
-
-**Resource Rules**
-1. Keep `cpus_per_task strictly` divisible by `executors_per_node` (Spark) or `tm_per_node` (Flink). Fractions round down, leaving cores idle.
-2. The combined `driver`/`master` memory and total `worker pool` memory must fit entirely within the SLURM `mem` limit to avoid node oversubscription and OOM kills.
+| `executors_per_node` / `tm_per_node` | Spark / Flink | Executors / TaskManagers packed onto one node. |
+| `worker_mem_gb` / `tm_mem_gb` | Spark / Flink | RAM pool per node for the Worker / TaskManager processes. |
+| `driver_mem_gb` / `jm_mem_gb` | Spark / Flink | Driver budget: a **heap** for Spark, a **process total** for Flink. Set `jm_mem_gb ≈ driver_mem_gb + 1`. |

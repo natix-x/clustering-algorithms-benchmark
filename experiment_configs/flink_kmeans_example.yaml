@@ -18,7 +18,10 @@ evaluation_config:
   sampleSize: 10000
   seed: 42
 
-# flink_config: {}          # optional extra Flink config (taskmanager/network/...)
+# Optional per-run Flink configuration, applied to the execution environment. Job-scoped keys
+# only (execution.*, pipeline.*, ...) — TaskManager process memory is derived by
+# flink_resources_resolver.py and written into the per-run flink-conf.yaml.
+# flink_config: {}
 
 experiment_matrix:
   nodes: [2]
@@ -26,15 +29,23 @@ experiment_matrix:
     - cpus_per_task: 4
       tm_per_node: 1
       mem: "48G"
+      # Goes to Flink's own memory model unsplit; it decides task heap vs managed memory.
+      # Task heap alone comes out ~1.6x under the paired Spark cell's executor heap, which
+      # is expected: Flink's point cache lives in MANAGED memory, Spark's in the same heap.
+      # Summed, the two land within ~4% (see flink_resources_resolver.py).
       tm_mem_gb: 41
-      jm_mem_gb: 1
+      # PROCESS total, not heap: Flink takes JVM overhead + metaspace + off-heap out of it
+      # before the driver sees any. The JobManager IS the driver under Application Mode, so
+      # this has to leave a heap matching the paired Spark cell's driver_mem_gb: 4 — at 5 GB
+      # the resolver derives 4224 MB of JM heap. `jm_mem_gb: 1` used to leave 448 MB.
+      jm_mem_gb: 5
   algorithms:
     - name: kmeans
       params:
         k: 10
         maxIter: 10
         distance: euclidean
-  datasets: # TODO: ogarnięcie tej sekcji - po preprocessingu danych
+  datasets:
     - type: synthetic
       params:
         numPoints: 100000
