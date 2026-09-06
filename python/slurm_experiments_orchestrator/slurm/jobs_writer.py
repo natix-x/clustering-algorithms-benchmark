@@ -42,8 +42,21 @@ class JobWriter:
         sbatch_path = Path(sbatch_dir)
         sbatch_path.mkdir(parents=True, exist_ok=True)
 
-        submit_lines = ["#!/bin/bash", "set -e", ""]
+        # Cap on how many runs of this matrix may execute at once. Unset = SLURM decides, which
+        # let uncontrolled concurrency leak into the timings via Lustre contention and Flink's
+        # reporter (file write+rename per tick vs Spark's RPC) — see git history for the numbers.
+        max_concurrent = yaml_config.get("max_concurrent_runs")
 
+        submit_lines = ["#!/bin/bash", "set -e", ""]
+        if max_concurrent:
+            submit_lines += [
+                f"# Throttled to {max_concurrent} concurrent run(s): job i waits for job i-{max_concurrent}",
+                "# (afterany, so one failure does not strand the rest of the matrix).",
+                "IDS=()",
+                "",
+            ]
+
+        submitted: list = []
         groups: dict[int, list[Experiment]] = defaultdict(list)
         for experiment in experiments:
             groups[experiment.nodes].append(experiment)
@@ -61,7 +74,18 @@ class JobWriter:
                     yaml_config=yaml_config,
                 ))
                 script_path.chmod(0o755)
-                submit_lines.append(f"sbatch {script_path}")
+                if max_concurrent:
+                    index = len(submitted)
+                    if index < max_concurrent:
+                        submit_lines.append(f"IDS+=( $(sbatch --parsable {script_path}) )")
+                    else:
+                        blocker = index - max_concurrent
+                        submit_lines.append(
+                            f"IDS+=( $(sbatch --parsable "
+                            f"--dependency=afterany:${{IDS[{blocker}]}} {script_path}) )")
+                    submitted.append(script_path)
+                else:
+                    submit_lines.append(f"sbatch {script_path}")
 
             logger.info(f"nodes={nodes}: {len(groups[nodes])} sbatch files generated.")
 

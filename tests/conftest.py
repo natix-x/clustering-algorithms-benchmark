@@ -38,8 +38,10 @@ _SPARK_MATRIX = {
 
 _FLINK_MATRIX = {
     "nodes": [1],
+    # jm_mem_gb is a PROCESS total; 3 GB leaves ~2.4 GB of JobManager heap, which is the
+    # Flink twin of the Spark matrix's driver_mem_gb: 2 (the JM IS the driver here).
     "resources": [{"cpus_per_task": 4, "tm_per_node": 1, "mem": "8G",
-                   "tm_mem_gb": 6, "jm_mem_gb": 1}],
+                   "tm_mem_gb": 6, "jm_mem_gb": 3}],
     "algorithms": [{"name": "kmeans", "params": {"k": 3}}],
     "datasets": [{"type": "synthetic", "params": {"numPoints": 100}}],
 }

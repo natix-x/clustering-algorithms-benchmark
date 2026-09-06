@@ -1,8 +1,6 @@
 """Spark resource packing math (cores/memory split across executors)."""
 from __future__ import annotations
 
-import logging
-
 import pytest
 
 from slurm_experiments_orchestrator.launchers.spark_resources_resolver import (
@@ -18,9 +16,13 @@ def _cell(**over):
     return base
 
 
-def test_cores_split_evenly():
+def test_executor_cores_is_cpus_per_task_regardless_of_executors_per_node():
+    # cpus_per_task is cores PER EXECUTOR (SLURM's own per-task unit) — it is not split
+    # across executors_per_node. The Worker daemon instead advertises their combined
+    # pool (see spark_sbatch_template.py's WORKER_CORES), so num_partitions / total
+    # cores scale with executors_per_node, cores/executor stay pinned at cpus_per_task.
     r = resources_from_cell(_cell(cpus_per_task=8, executors_per_node=2))
-    assert r.executor_cores == 4  # 8 // 2
+    assert r.executor_cores == 8
 
 
 def test_single_executor_gets_all_cores():
@@ -46,16 +48,13 @@ def test_total_and_driver_carried_through():
     assert r.driver_gb == 4
 
 
-def test_leftover_is_total_minus_grants():
+def test_leftover_counts_both_daemon_jvms():
+    # On the head node the real footprint is executor pool + driver + Master + the Worker
+    # DAEMON's own JVM. The daemon used to be omitted, so `leftover_gb` over-reported the
+    # free RAM by 1 GB per node and the head node could run the --mem cgroup dry.
     r = resources_from_cell(_cell(mem="48G", driver_mem_gb=4, worker_mem_gb=38))
-    assert r.leftover_gb == 48 - r.master_gb - 4 - 38
-
-
-def test_non_divisible_cores_warns(caplog):
-    with caplog.at_level(logging.WARNING):
-        r = resources_from_cell(_cell(cpus_per_task=7, executors_per_node=2))
-    assert r.executor_cores == 3  # 7 // 2
-    assert "not divisible" in caplog.text
+    assert r.daemon_gb == 2
+    assert r.leftover_gb == 48 - r.daemon_gb - 4 - 38
 
 
 def test_returns_frozen_dataclass():
