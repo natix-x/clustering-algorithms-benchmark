@@ -5,7 +5,7 @@ import os
 
 from slurm_experiments_orchestrator.common.experiments_generator import Experiment
 from slurm_experiments_orchestrator.common.config import SPARK_RESOURCE_KEYS
-from slurm_experiments_orchestrator.launchers.base_launcher import Launcher
+from slurm_experiments_orchestrator.launchers.base_launcher import Launcher, evaluation_block
 from slurm_experiments_orchestrator.launchers.spark_resources_resolver import (
     SparkResources,
     resources_from_cell,
@@ -27,7 +27,7 @@ class SparkLauncher(Launcher):
         self, experiment: Experiment, output_dir: str, yaml_config: dict
     ) -> dict:
         spark_conf = dict(yaml_config.get("spark_config", {}))
-        evaluation = dict(yaml_config.get("evaluation_config", {}))
+        evaluation = evaluation_block(yaml_config, experiment)
         sbatch_config = yaml_config.get("sbatch_config", {})
 
         resources = experiment.cell["resources"]
@@ -105,6 +105,7 @@ class SparkLauncher(Launcher):
             executors_per_node=int(resources["executors_per_node"]),
             worker_mem=spark_resources.worker_pool_gb,
             driver_mem=spark_resources.driver_gb,
+            master_mem=spark_resources.master_gb,
             executor_mem=spark_resources.executor_gb,
             executor_cores=spark_resources.executor_cores,
             executor_overhead_mb=spark_resources.executor_overhead_mb,
