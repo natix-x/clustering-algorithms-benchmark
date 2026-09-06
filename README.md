@@ -163,8 +163,7 @@ keeps runs isolated and reproducible.
   <img src="media/flink_standalone_ares_cluster.png" alt="Flink standalone session cluster on Ares" width="80%"><br>
   <em>Flink standalone cluster on a SLURM allocation (Ares), shown from the
   <strong>physical-node</strong> perspective: JobManager daemon + one TaskManager per
-  node, with a separate <code>flink run</code> client as the driver (Session Mode,
-  current as of 5.09.2026 — see below).</em>
+  node, with a separate <code>flink run</code> client as the driver (Session Mode).</em>
 </p>
 
 #### Spark bootstrap (inside each `<runId>.sbatch`)
