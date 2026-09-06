@@ -1,10 +1,9 @@
 """
-Template for the Flink SLURM job script (standalone session cluster: one
-JobManager on the head node + a TaskManager per task, then `flink run`).
+Template for the Flink SLURM job script (standalone SESSION mode: a JobManager daemon on the
+head node, a TaskManager per task, and a `flink run` client that runs main() in its own JVM).
 
-The bash body is split into single-purpose functions (check_config, setup_dirs,
-configure_cluster, write_flink_conf, start_jobmanager, start_taskmanagers,
-wait_for_taskmanagers, submit_job, cleanup) with a short `main` flow at the bottom.
+Switched off Application Mode (05.09.2026): isolated `usrlib` pathing caused ClassNotFoundExceptions
+on remote TMs. Session mode relies on BlobServer distribution, resolving this cleanly.
 """
 
 FLINK_SBATCH_TEMPLATE = """#!/bin/bash -l
@@ -21,37 +20,33 @@ FLINK_SBATCH_TEMPLATE = """#!/bin/bash -l
 #SBATCH --error={log_dir}/{run_id}_%j.err
 
 set -euo pipefail
-# No Flink module on Ares -> use a self-installed Flink (FLINK_HOME) + a Java 11 module
-# (Java 11 = common runtime with Spark 3.3 for a consistent comparison).
+
 module purge && module load {java_module}
 export FLINK_HOME="{flink_home}"
 
 CONFIG_PATH="{config_path}"
 RUN_ID="{run_id}"
+JAR_PATH="{jar_path}"
 
 # --------------------------------------------------------------------------- #
-# helpers                                                                      #
+# Helpers                                                                     #
 # --------------------------------------------------------------------------- #
 
 check_config() {{
-    if [ ! -f "$CONFIG_PATH" ]; then
-        echo "$CONFIG_PATH not found!"
-        exit 1
-    fi
+    for file in "$CONFIG_PATH" "$JAR_PATH"; do
+        if [ ! -f "$file" ]; then
+            echo "ERROR: File not found - $file" >&2
+            exit 1
+        fi
+    done
 }}
 
 setup_dirs() {{
-    # SHARED metrics file (Lustre $SCRATCH via output_dir): every TaskManager's reporter
-    # writes <path>.<uuid> here and the driver globs them. MUST be shared, not node-local.
-    # Driver (BenchmarkRunner) reads CLUSTERING_METRICS_FILE; reporters read the flink-conf
-    # entry below. Reporter jar must be in $FLINK_HOME/lib (see README).
     export CLUSTERING_METRICS_FILE="{output_dir}/metrics/$RUN_ID/flink-metrics.txt"
-    mkdir -p "$(dirname "$CLUSTERING_METRICS_FILE")"
-
-    # Writable Flink conf dir on SHARED storage (so TaskManagers started via srun on OTHER
-    # nodes read the same per-run config — a node-local /tmp conf is invisible to workers).
     export FLINK_CONF_DIR="{output_dir}/flink-conf/$RUN_ID"
-    mkdir -p "$FLINK_CONF_DIR"
+    export FLINK_LOG_DIR="{output_dir}/flink_logs/$RUN_ID"
+
+    mkdir -p "$(dirname "$CLUSTERING_METRICS_FILE")" "$FLINK_CONF_DIR" "$FLINK_LOG_DIR"
     cp -r "$FLINK_HOME"/conf/* "$FLINK_CONF_DIR"/ 2>/dev/null || true
 }}
 
@@ -61,87 +56,136 @@ configure_cluster() {{
     SLOTS_PER_TM={slots_per_tm}
     TOTAL_TMS=$(( SLURM_NNODES * TMS_PER_NODE ))
     TOTAL_SLOTS=$(( TOTAL_TMS * SLOTS_PER_TM ))
-    FLINK_TMP_DIR="/tmp/flink_tmp_${{SLURM_JOB_ID}}_$RUN_ID"
+    
+    # Must sit on shared Lustre storage to ensure multi-node visibility and avoid
+    # filling up minimal node-local /tmp partitions on compute nodes.
+    FLINK_TMP_DIR="{output_dir}/flink_entrypoint/${{SLURM_JOB_ID}}_$RUN_ID"
+    export FLINK_LOCAL_DIRS="{output_dir}/flink_local/${{SLURM_JOB_ID}}_$RUN_ID"
+    mkdir -p "$FLINK_LOCAL_DIRS"
+}}
+
+setup_entrypoint_classpath() {{
+    export FLINK_LIB_DIR="$FLINK_HOME/lib"
 }}
 
 write_flink_conf() {{
-    {{
-      echo "jobmanager.rpc.address: $JM_HOST"
-      echo "jobmanager.rpc.port: 6123"
-      echo "jobmanager.bind-host: 0.0.0.0"
-      # Cross-node TM reachability needs BOTH: bind-host 0.0.0.0 (listen on all interfaces)
-      # AND taskmanager.host = the node's real hostname (advertised address), set per-node via
-      # -D in the srun launch below. With only bind-host, TMs advertise localhost; with only
-      # host, they bind to localhost. Both together = advertise ac0xxx, listen on 0.0.0.0.
-      echo "taskmanager.bind-host: 0.0.0.0"
-      echo "rest.address: $JM_HOST"
-      echo "rest.bind-address: 0.0.0.0"
-      echo "rest.port: 8081"
-      echo "taskmanager.numberOfTaskSlots: $SLOTS_PER_TM"
-      echo "taskmanager.memory.process.size: {tm_mem}g"
-      echo "jobmanager.memory.process.size: {jm_mem}g"
-      echo "parallelism.default: {parallelism}"
-      echo "io.tmp.dirs: $FLINK_TMP_DIR"
-      echo "metrics.reporter.file.factory.class: clustering.metrics.FileMetricReporterFactory"
-      echo "metrics.reporter.file.path: $CLUSTERING_METRICS_FILE"
-      echo "metrics.reporter.file.interval: 1 SECONDS"
-    }} >> "$FLINK_CONF_DIR/flink-conf.yaml"
+    # WARNINGS MAINTAINED FROM PREVIOUS RUNS:
+    # 1. taskmanager.bind-host / host: Both required for cross-node TM reachability.
+    # 2. default-source-parallelism: MUST equal $TOTAL_SLOTS. Otherwise, AdaptiveBatchScheduler 
+    #    forces parallelism=1 on parquet sources, crippling load times (found 05.09.2026).
+    # 3. task.off-heap.size: Set to 4GB. Sources (Parquet/Hadoop) allocate per-split direct 
+    #    memory; without this, it consumes the 1GB network budget and OOMs.
+    # 4. execution.attached: Required for detached EAGER client-side executions (count/collect).
+    
+    cat <<EOF >> "$FLINK_CONF_DIR/flink-conf.yaml"
+jobmanager.rpc.address: $JM_HOST
+jobmanager.rpc.port: 6123
+jobmanager.bind-host: 0.0.0.0
+taskmanager.bind-host: 0.0.0.0
+rest.address: $JM_HOST
+rest.bind-address: 0.0.0.0
+rest.port: 8081
+taskmanager.numberOfTaskSlots: $SLOTS_PER_TM
+execution.batch.adaptive.auto-parallelism.default-source-parallelism: $TOTAL_SLOTS
+taskmanager.memory.process.size: {tm_process_mb}m
+taskmanager.memory.network.max: {tm_network_max_mb}m
+taskmanager.memory.task.off-heap.size: 4096m
+jobmanager.memory.process.size: {jm_process_mb}m
+jobmanager.memory.heap.size: {jm_heap_mb}m
+env.java.opts.all: -XX:+UseG1GC
+parallelism.default: {parallelism}
+io.tmp.dirs: $FLINK_LOCAL_DIRS
+metrics.reporter.file.factory.class: clustering.metrics.FileMetricReporterFactory
+metrics.reporter.file.path: $CLUSTERING_METRICS_FILE
+metrics.reporter.file.interval: 200 MILLISECONDS
+execution.attached: true
+EOF
 }}
 
 print_summary() {{
-    echo "JobManager host: $JM_HOST   TaskManagers: $TOTAL_TMS   slots/TM: $SLOTS_PER_TM   total slots: $TOTAL_SLOTS   parallelism: {parallelism}"
+    echo "JobManager/driver host: $JM_HOST   TaskManagers: $TOTAL_TMS   slots/TM: $SLOTS_PER_TM   total slots: $TOTAL_SLOTS   parallelism: {parallelism}"
+    echo "TaskManager memory: {tm_process_mb}m process, split by Flink (network capped at {tm_network_max_mb}m)"
+    echo "JobManager/driver:  {jm_process_mb}m process = {jm_heap_mb}m heap"
+    echo "Spill dir (io.tmp.dirs): $FLINK_LOCAL_DIRS   logs: $FLINK_LOG_DIR"
 }}
 
 cleanup() {{
     EXIT_CODE=$?
     echo ">>> cleaning up $RUN_ID (exit=$EXIT_CODE)"
+    if [ -n "${{JOB_PID:-}}" ]; then
+        kill "$JOB_PID" 2>/dev/null || true
+    fi
     "$FLINK_HOME/bin/taskmanager.sh" stop-all 2>/dev/null || true
     "$FLINK_HOME/bin/jobmanager.sh" stop 2>/dev/null || true
-    rm -rf "$FLINK_TMP_DIR" "$FLINK_CONF_DIR"
+    rm -rf "$FLINK_TMP_DIR" "$FLINK_CONF_DIR" "${{FLINK_LOCAL_DIRS:-}}"
     exit $EXIT_CODE
+}}
+
+start_taskmanagers() {{
+    srun --ntasks-per-node="$TMS_PER_NODE" \
+         --cpus-per-task="$SLOTS_PER_TM" \
+         --export=ALL \
+         bash -c 'FLINK_LIB_DIR="$FLINK_HOME/lib" "$FLINK_HOME/bin/taskmanager.sh" start-foreground -D taskmanager.host=$(hostname)' &
 }}
 
 start_jobmanager() {{
     "$FLINK_HOME/bin/jobmanager.sh" start
 }}
 
-start_taskmanagers() {{
-    # One TaskManager per task across the allocation. Force taskmanager.host to each node's
-    # own hostname ($(hostname) evaluated per-node inside srun): Flink's auto-detect picks
-    # loopback here, so without this TMs advertise localhost and cross-node shuffle connects
-    # to 127.0.0.1 and fails. The hostname resolves to the routable 172.22.x IP.
-    srun --ntasks-per-node="$TMS_PER_NODE" \
-         --cpus-per-task="$SLOTS_PER_TM" \
-         --export=ALL \
-         bash -c '"$FLINK_HOME/bin/taskmanager.sh" start-foreground -D taskmanager.host=$(hostname)' &
+submit_job() {{
+    "$FLINK_HOME/bin/flink" run \
+      -m "$JM_HOST:8081" \
+      -c clustering.benchmark.BenchmarkRunner \
+      "$JAR_PATH" \
+      "$CONFIG_PATH" &
+    JOB_PID=$!
 }}
 
 wait_for_taskmanagers() {{
-    echo -n "Waiting for $TOTAL_TMS TaskManagers"
-    for _i in $(seq 1 60); do
-        REGISTERED=$(curl -sf "http://$JM_HOST:8081/overview" 2>/dev/null \
+    echo -n "Waiting for $TOTAL_TMS TaskManagers (REST http://$JM_HOST:8081/overview)"
+    REGISTERED=0
+    SLEEP_SEC=2
+    MAX_RETRIES=120
+
+    for _i in \$(seq 1 \$MAX_RETRIES); do
+        REGISTERED=\$(curl -sf "http://$JM_HOST:8081/overview" 2>/dev/null \
             | python3 -c "import sys,json; print(json.load(sys.stdin).get('taskmanagers',0))" 2>/dev/null || echo 0)
-        if [ "$REGISTERED" -ge "$TOTAL_TMS" ]; then
-            echo " OK ($REGISTERED in ${{_i}}s)"
+        
+        if [ "\$REGISTERED" -ge "$TOTAL_TMS" ]; then
+            ELAPSED=\$((_i * SLEEP_SEC))
+            echo " OK (\$REGISTERED/$TOTAL_TMS in \${{ELAPSED}}s)"
             break
         fi
+        
+        # Check if early job failure occurred
+        if [ -n "${{JOB_PID:-}}" ] && ! kill -0 "$JOB_PID" 2>/dev/null; then
+            echo -e "\nNOTE: Application process exited before all TaskManagers registered."
+            return 0
+        fi
+        
         echo -n "."
-        sleep 2
+        sleep \$SLEEP_SEC
     done
-}}
 
-submit_job() {{
-    # bare `flink` is NOT on PATH — no Flink module; use the install's binary.
-    "$FLINK_HOME/bin/flink" run \
-      -m "$JM_HOST:8081" \
-      -p "{parallelism}" \
-      "{jar_path}" --config "$CONFIG_PATH"
+    if [ "\$REGISTERED" -lt "$TOTAL_TMS" ]; then
+        echo -e "\nWARNING: Only \$REGISTERED/$TOTAL_TMS TaskManagers registered in \$((MAX_RETRIES * SLEEP_SEC))s."
+        echo "Leaving the verdict to FlinkClusteringJob.waitForClusterReady. Diagnostics:"
+        curl -sf "http://$JM_HOST:8081/overview" 2>/dev/null \
+            | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))" \
+            2>/dev/null || echo "(REST unavailable)"
+            
+        for _f in "$FLINK_LOG_DIR"/*standalonejob*.log; do
+            [ -f "$_f" ] || continue
+            echo "--- $_f ---"; tail -20 "$_f"
+        done
+    fi
 }}
 
 echo "=== RUN: $RUN_ID  (Job=$SLURM_JOB_ID) ==="
 check_config
 setup_dirs
 configure_cluster
+setup_entrypoint_classpath
 write_flink_conf
 trap cleanup EXIT INT TERM
 print_summary
@@ -149,4 +193,5 @@ start_jobmanager
 start_taskmanagers
 wait_for_taskmanagers
 submit_job
+wait "$JOB_PID"
 """
