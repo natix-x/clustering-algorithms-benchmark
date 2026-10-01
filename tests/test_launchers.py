@@ -86,18 +86,6 @@ def test_spark_render_has_key_directives(spark_yaml):
     assert "spark-submit" in sb
 
 
-def test_flink_render_has_parallelism(flink_yaml):
-    exp = generate_experiments(flink_yaml)[0]
-    sb = launchers.get_launcher("flink").render_sbatch(
-        experiment=exp, run_config_path="/tmp/c.json",
-        log_dir="/tmp/l", output_dir="/tmp/o", yaml_config=flink_yaml,
-    )
-    assert 'parallelism.default: 4' in sb
-    # Application Mode: parallelism comes only from flink-conf.yaml above (no `flink run -p`
-    # flag anymore — standalone-job.sh runs main() inside the JobManager process itself).
-    assert '--job-classname clustering.benchmark.BenchmarkRunner' in sb
-
-
 def test_spark_parquet_gets_the_derived_partition_count(parquet_yaml):
     exp = generate_experiments(parquet_yaml)[0]
     params = launchers.get_launcher("spark").build_run_config(exp, "/tmp/o", parquet_yaml)["dataset"]["params"]

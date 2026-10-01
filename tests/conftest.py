@@ -63,6 +63,6 @@ def flink_yaml() -> dict:
 def parquet_yaml(spark_yaml) -> dict:
     """Spark matrix reading a preprocessed embedding set instead of synthetic data."""
     spark_yaml["experiment_matrix"]["datasets"] = [
-        {"type": "parquet", "params": {"path": "/data/cohere", "featureColumnName": "emb"}}
+        {"type": "parquet", "params": {"path": "/data/embeddings", "featureColumnName": "emb"}}
     ]
     return spark_yaml

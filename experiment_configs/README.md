@@ -31,13 +31,14 @@ This generates one independent SLURM job per combination, each tagged with a uni
 - `datasets: [{type, params}]` (e.g., `synthetic` with `params: {numPoints}`, see [Datasets](#datasets)).
 
 ### `evaluation_config`
-- `metrics` List of computed metrics: `silhouette`, `nClusters`, `clusterSizes`, `noiseFraction`.
-  Omitting the key (or the whole `evaluation_config`) means all four. To run fit-only:
+- `metrics` List of computed metrics: `silhouette`, `nClusters`, `clusterSizes`, `noiseFraction`
+  (the defaults when the key or the whole `evaluation_config` is omitted), plus opt-in `daviesBouldin` and
+  `calinskiHarabasz`. To run fit-only:
   ```yaml
   evaluation_config:
     metrics: []
   ```
-- `sampleSize` Cap for the O(n²) silhouette. Default 10 000 on both engines.
+- `sampleSize` Cap for the O(n²) silhouette. Absent = 10 000 on both engines; explicit `null` = no sampling (refused above 50 000 labelled rows).
 - `seed` Base RNG seed for the evaluation draw (default 42). The launcher writes `seed + rep` into
   each generated run config, so every cell of one repetition shares a seed and repetitions differ.
 
@@ -52,12 +53,12 @@ at generation time, at any depth.
 |---|:---:|---|
 | `numPoints` | ✔ | Generated row count. |
 | `seed` | – | RNG seed (default 42). |
-| `numPartitions` | – | Generated partition count; injected from the resource profile if absent. |
+| `numPartitions` | – | Generated partition count; Spark: injected from the resource profile if absent. Flink: always set to the job parallelism. |
 
 ### `type: parquet`
 
 Reads the preprocessed datasets (see `datasets/README.md`). Each is one array column: `features`
-for the tabular sets (Gaia, NYC), `emb` for the embedding ones (tech-news, monet, Cohere) — hence
+for the tabular sets (Gaia, NYC), `emb` for the embedding ones (tech-news, monet) — hence
 `featureColumnName` is required.
 
 | param | required | meaning |
@@ -66,15 +67,13 @@ for the tabular sets (Gaia, NYC), `emb` for the embedding ones (tech-news, monet
 | `featureColumnName` | ✔ | Column holding the vector (`array<float>`, `array<double>` or an ML `Vector`). |
 | `sampleFraction` | – | Fraction in (0, 1]; random subset |
 | `seed` | – | Seed of `sampleFraction` (default 42). |
-| `numPartitions` | – | Partition count after the read (coalesce down / shuffle up). Injected from the resource profile if absent. |
+| `numPartitions` | – | Partition count after the read (coalesce down / shuffle up). Spark: injected from the resource profile if absent. Flink: always set to the job parallelism. |
 | `weightColumn` | – | Per-row weight (how many points the row stands for). Absent = 1.0 each. |
 
 ```yaml
 datasets:
   - {type: parquet, params: {path: "/net/pr2/projects/plgrid/plggclustering25/gaia_data_preprocessed",
                              featureColumnName: features, sampleFraction: 0.01}}
-  - {type: parquet, params: {path: "/net/pr2/projects/plgrid/plggclustering25/cohere_vectores_data_preprocessed",
-                             featureColumnName: emb, sampleFraction: 0.05}}
 ```
 
 ## Environment (`sbatch_config`)
@@ -88,8 +87,8 @@ SLURM arguments and module setups applied to all generated jobs:
 
 | Parameter | Engine | Description |
 |---|---|---|
-| `cpus_per_task` | Both | Cores per SLURM task — cores per **executor** (Spark) / slots per **TaskManager** (Flink). Not split across instances. |
+| `cpus_per_task` | Both | Cores per SLURM task — cores per executor (Spark) / slots per TaskManager (Flink). Not split across instances. |
 | `mem` | Both | Total SLURM `--mem` per node (string, e.g., `"48G"`). |
 | `executors_per_node` / `tm_per_node` | Spark / Flink | Executors / TaskManagers packed onto one node. |
 | `worker_mem_gb` / `tm_mem_gb` | Spark / Flink | RAM pool per node for the Worker / TaskManager processes. |
-| `driver_mem_gb` / `jm_mem_gb` | Spark / Flink | Driver budget: a **heap** for Spark, a **process total** for Flink. Set `jm_mem_gb ≈ driver_mem_gb + 1`. |
+| `driver_mem_gb` / `jm_mem_gb` | Spark / Flink | Driver budget: a heap for Spark, a process total for Flink. Set `jm_mem_gb ≈ driver_mem_gb + 1`. |

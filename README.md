@@ -11,11 +11,10 @@ Part of the Master thesis 'Performance and efficiency issues of the use of Big D
 * [Usage](#usage)
 
 
-### General info
-Engine-agnostic **benchmark harness** for the MSc thesis comparing clustering
-algorithms on Big Data frameworks. This repo owns experiment orchestration, the
-exchange **contract**, and result analysis. The actual algorithm implementations
-live in the per-engine repos:
+## General info
+Engine-agnostic benchmark harness for the MSc thesis comparing clustering
+algorithms on Big Data frameworks. This repo owns experiment orchestration and the exchange contract.
+It also contains the data preprocessing scripts. The actual algorithm implementations live in the per-engine repos:
 
 - [`spark-clustering-algorithms`](https://github.com/natix-x/spark-clustering-algorithms) — Scala / Spark
 - [`flink-clustering-algorithms`](https://github.com/natix-x/flink-clustering-algorithms) — Java / Flink
@@ -25,12 +24,12 @@ produces `run_config`, each engine consumes it and produces a result. The format
 CORE vs ENGINE fields, and how conformance is validated are documented in
 [`contract/README.md`](contract/README.md).
 
-> **Note:** Some documentation and diagrams are in Polish, as the master thesis they accompany is written in Polish.
+> Note: Some documentation and diagrams are in Polish, as the master thesis they accompany is written in Polish.
 
 ## Architecture
 
 One experiment-matrix YAML fans out into many independent per-run jobs. The harness
-is engine-agnostic; `--framework` picks a **Launcher** (Strategy) that owns every
+is engine-agnostic; `--framework` picks a Launcher (Strategy design pattern) that owns every
 Spark/Flink-specific detail.
 
 ### Flowchart:
@@ -140,15 +139,15 @@ classDiagram
 
 ### Cluster topology on SLURM
 
-Every generated `<runId>.sbatch` bootstraps a **throwaway standalone cluster on the
-allocated nodes**, runs one job, then tears it down (`trap cleanup` on exit). There is
+Every generated `<runId>.sbatch` bootstraps a throwaway standalone cluster on the
+allocated nodes, runs one job, then tears it down (`trap cleanup` on exit). There is
 no external cluster manager — each SLURM job owns its cluster for its lifetime, which
 keeps runs isolated and reproducible.
 
-- **Spark** — a Master on the head node + one Worker per node (started via `srun`). The
+- Spark — a Master on the head node + one Worker per node (started via `srun`). The
   driver runs in client mode on the head node; executors are packed onto the Workers.
-- **Flink** — one TaskManager per task (via `srun`) plus a JobManager **daemon** on the
-  head node (`jobmanager.sh start`, **Session Mode**), coordinating only. `main()` (the
+- Flink — one TaskManager per task (via `srun`) plus a JobManager daemon on the
+  head node (`jobmanager.sh start`, Session Mode), coordinating only. `main()` (the
   benchmark driver code) runs in a separate `flink run` client process — the direct
   analogue of Spark's client-mode driver, and what `RunResult.driver*` actually samples.
   Job parallelism = total slots = `nodes × tm_per_node × cpus_per_task`.
@@ -156,19 +155,19 @@ keeps runs isolated and reproducible.
 <p align="center">
   <img src="media/spark_standalone_ares_cluster.png" alt="Spark standalone cluster on Ares" width="80%"><br>
   <em>Spark standalone cluster on a SLURM allocation (Ares), shown from the
-  <strong>master–slave role</strong> perspective.</em>
+  master–slave role perspective.</em>
 </p>
 
 <p align="center">
   <img src="media/flink_standalone_ares_cluster.png" alt="Flink standalone session cluster on Ares" width="80%"><br>
   <em>Flink standalone cluster on a SLURM allocation (Ares), shown from the
-  <strong>physical-node</strong> perspective: JobManager daemon + one TaskManager per
+  physical-node perspective: JobManager daemon + one TaskManager per
   node, with a separate <code>flink run</code> client as the driver (Session Mode).</em>
 </p>
 
 #### Spark bootstrap (inside each `<runId>.sbatch`)
 
-`spark-submit` runs in **client mode** on the head node; the trap tears the cluster
+`spark-submit` runs in client mode on the head node; the trap tears the cluster
 down on any exit.
 
 ```mermaid
@@ -242,19 +241,19 @@ sequenceDiagram
 
 #### Flink bootstrap (inside each `<runId>.sbatch`)
 
-Standalone **Session Mode**: a JobManager **daemon** (`jobmanager.sh start`) coordinates
+Standalone Session Mode: a JobManager daemon (`jobmanager.sh start`) coordinates
 the TaskManagers, and a separate `flink run` client runs `main()` (the benchmark driver,
 `BenchmarkRunner`) in its own JVM, blocking until the job finishes — the same shape as
 Spark's client-mode `spark-submit`. The client is therefore the driver, which is what
 `RunResult.driver*` samples; the JobManager only coordinates and does no algorithm work.
 
-Switched **from** Application Mode back to Session Mode on 5.09.2026: under Application
+Switched from Application Mode back to Session Mode on 5.09.2026: under Application
 Mode the jar reached remote TaskManagers as a *path* into a per-run `usrlib/` symlink
 tree, and each TaskManager had to resolve that path itself — the root cause behind two
 separate multi-node failure symptoms (`ClassNotFoundException` on
 `org.apache.flink.iteration.*`/`DenseVector`, and a `ClassCastException` from an
 unresolvable `SerializedLambda`). Session Mode's `flink run` client instead uploads the
-jar to the JobManager's **BlobServer**, and every TaskManager fetches the identical blob
+jar to the JobManager's BlobServer, and every TaskManager fetches the identical blob
 — no TaskManager ever resolves a path to the jar, so the classpath-symlink machinery is
 gone (`setup_entrypoint_classpath` is now a no-op beyond pinning the shared
 `$FLINK_HOME/lib`, kept as a named step for a future mode that might need it again).
@@ -329,13 +328,13 @@ sequenceDiagram
 
 #### Flink one-time setup on Ares
 
-Unlike Spark, Flink is **not** available as an Ares module,
-and Flink loads metric reporters from its **own** classpath (`$FLINK_HOME/lib`) rather than
-from the job jar. So a Flink installation and the reporter jar must be prepared **once per
-install**, before the first run. The YAML `flink_home` points at this install
+Unlike Spark, Flink is not available as an Ares module,
+and Flink loads metric reporters from its own classpath (`$FLINK_HOME/lib`) rather than
+from the job jar. So a Flink installation and the reporter jar must be prepared once per
+install, before the first run. The YAML `flink_home` points at this install
 (e.g. `$SCRATCH/flink-1.17.1`).
 
-**1. Install Flink on shared scratch.** Use 1.17.1 (matches the jar's `flink.version`) on
+1. Install Flink on shared scratch. Use 1.17.1 (matches the jar's `flink.version`) on
 Java 11 — the common runtime with Spark 3.3, for a consistent comparison:
 
 ```bash
@@ -344,7 +343,7 @@ wget https://archive.apache.org/dist/flink/flink-1.17.1/flink-1.17.1-bin-scala_2
 tar xzf flink-1.17.1-bin-scala_2.12.tgz        # -> $SCRATCH/flink-1.17.1 (= flink_home)
 ```
 
-**2. Build and install the metric-reporter jar.** Built from the
+2. Build and install the metric-reporter jar. Built from the
 `flink-clustering-algorithms` repo; it is slim (depends only on `flink-metrics-core`,
 already shipped with Flink) and must live on the cluster classpath, not in the job jar:
 
@@ -360,7 +359,7 @@ cp ../flink-clustering-metrics-reporter.jar "$SCRATCH/flink-1.17.1/lib/"
 
 ## Datasets
 
-The benchmark runs on five public datasets. Their descriptions, sizes,
+The benchmark runs on four public datasets (Gaia DR3, NYC TLC yellow taxi, MongoDB tech-news embeddings, jasperai/monet). Their descriptions, sizes,
 licenses, and preprocessing are documented in [`datasets/README.md`](datasets/README.md);
 the preprocessing jobs live in `python/data_preprocessing/` with SLURM scripts in
 `sbatch_scripts/`.
@@ -369,8 +368,10 @@ the preprocessing jobs live in `python/data_preprocessing/` with SLURM scripts i
 
 ```
 contract/                         # run_config.schema.json: the input contract (see contract/README.md)
-experiment_configs/               # YAML experiment matrices (engine-neutral)
-local_testing/experiment_configs/ # example per-run configs (contract fixtures)
+experiment_configs/               # YAML experiment matrices (engine-neutral); see experiment_configs/README.md
+datasets/                         # dataset descriptions, licenses, citations (datasets/README.md)
+sbatch_scripts/                   # preprocess.sbatch + run.sh: SLURM submission of the preprocessing jobs
+slurm_run.sh                      # thin wrapper: sets PYTHONPATH, forwards args to run_experiments.py
 python/
   slurm_experiments_orchestrator/ # job generation + submission (the harness)
     run_experiments.py            # CLI entry: --framework {spark,flink} <matrix>.yaml [--submit]
@@ -382,28 +383,25 @@ python/
       spark_launcher.py + spark_resources_resolver.py   # Spark sizing + config/sbatch
       flink_launcher.py           # Flink launcher
       sbatch_templates/           # spark_sbatch_template.py, flink_sbatch_template.py
-  data_preprocessing/             # dataset preparation
-  data_analysis/                  # result loading, metrics comparison, plots
+  data_preprocessing/             # dataset preparation (one Spark job per dataset + common/ helpers)
+  utils/                          # shared helpers (logger)
 tests/                            # pytest suite (validator, generator, launchers, contract)
-media/                            # images, tables, etc. used accross repository
+media/                            # cluster topology diagrams used in this README
 ```
 
 ## Requirements
 
-- Python 3.9+ 
-- pyyaml
-- jsonschema
-- pandas
-- numpy
-- matplotlib
-- pytest (for testing)
+- Python 3.9+
+- pyyaml, jsonschema (runtime)
+- pytest (dev group, for testing)
+- optional `preprocessing` extra (`pyspark`, `numpy`, `pyarrow`, `pandas`, `geopandas`) for running or linting the dataset preprocessing jobs locally; on Ares `pyspark` comes from the Spark module
 
 ## Usage
 
 Dependencies are managed with [uv](https://docs.astral.sh/uv/) (fast Python package
 manager).
 
-**1. Install uv** (once):
+1. Install uv (once):
 
 ```bash
 UV_VERSION="0.9.28" && curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh
@@ -411,7 +409,7 @@ UV_VERSION="0.9.28" && curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh 
 
 See the [uv documentation](https://docs.astral.sh/uv/) if you hit any issues.
 
-**2. Set up the environment:**
+2. Set up the environment:
 
 ```bash
 uv sync           
@@ -419,10 +417,9 @@ uv run pytest
 ```
 
 `uv sync` installs the runtime deps (`pyyaml`, `jsonschema`) plus the `dev` group
-(`pytest`). Add `--extra analysis` for the analysis extras (`pandas`, `numpy`,
-`matplotlib`).
+(`pytest`). Add `--extra preprocessing` for the dataset preprocessing dependencies.
 
-**3. Generate / submit jobs.** On the cluster use the thin wrapper (`slurm_run.sh` just
+3. Generate / submit jobs. On the cluster use the thin wrapper (`slurm_run.sh` just
 sets `PYTHONPATH` and forwards args to the Python entrypoint):
 
 ```bash

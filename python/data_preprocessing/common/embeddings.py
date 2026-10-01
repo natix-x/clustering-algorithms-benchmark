@@ -1,4 +1,4 @@
-"""Shared preprocessing for embedding datasets (Cohere, MongoDB, Monet, ...).
+"""Shared preprocessing for embedding datasets (MongoDB, Monet, ...).
 
 They all do the same thing: read Parquet, keep one embedding column, drop
 null/wrong-length/NaN vectors, and write an ENGINE-NEUTRAL `array<float>` (never a Spark
