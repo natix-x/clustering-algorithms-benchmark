@@ -108,19 +108,19 @@ wait_for_master() {{
     MAX_RETRIES=40
     SLEEP_SEC=2
     
-    for _i in \$(seq 1 \$MAX_RETRIES); do
-        LOG_FILE=\$(find "$SPARK_LOG_DIR" -name "*.out" 2>/dev/null | head -1)
-        if [ -n "\$LOG_FILE" ] && grep -q "I have been elected leader" "\$LOG_FILE" 2>/dev/null; then
-            echo " OK (\$((_i * SLEEP_SEC))s)"
+    for _i in $(seq 1 $MAX_RETRIES); do
+        LOG_FILE=$(find "$SPARK_LOG_DIR" -name "*.out" 2>/dev/null | head -1)
+        if [ -n "$LOG_FILE" ] && grep -q "I have been elected leader" "$LOG_FILE" 2>/dev/null; then
+            echo " OK ($((_i * SLEEP_SEC))s)"
             return 0
         fi
         echo -n "."
-        sleep \$SLEEP_SEC
+        sleep $SLEEP_SEC
     done
 
-    echo -e "\\nERROR: Master did not start in \$((MAX_RETRIES * SLEEP_SEC))s. Logs in $SPARK_LOG_DIR:"
+    echo -e "\\nERROR: Master did not start in $((MAX_RETRIES * SLEEP_SEC))s. Logs in $SPARK_LOG_DIR:"
     find "$SPARK_LOG_DIR" -name "*.out" 2>/dev/null | while read -r f; do
-        echo "--- \$f ---"; tail -5 "\$f"
+        echo "--- $f ---"; tail -5 "$f"
     done
     exit 1
 }}
@@ -144,20 +144,20 @@ wait_for_workers() {{
     MAX_RETRIES=60
     SLEEP_SEC=2
     
-    for _i in \$(seq 1 \$MAX_RETRIES); do
-        WORKERS_READY=\$(curl -sf "$MASTER_UI/json/" 2>/dev/null \
+    for _i in $(seq 1 $MAX_RETRIES); do
+        WORKERS_READY=$(curl -sf "$MASTER_UI/json/" 2>/dev/null \
             | python3 -c "import sys,json; print(json.load(sys.stdin).get('aliveworkers', 0))" \
             2>/dev/null || echo 0)
 
-        if [ "\$WORKERS_READY" -ge "$EXPECTED_WORKERS" ]; then
-            echo " OK (\$WORKERS_READY/$EXPECTED_WORKERS in \$((_i * SLEEP_SEC))s)"
+        if [ "$WORKERS_READY" -ge "$EXPECTED_WORKERS" ]; then
+            echo " OK ($WORKERS_READY/$EXPECTED_WORKERS in $((_i * SLEEP_SEC))s)"
             return 0
         fi
         echo -n "."
-        sleep \$SLEEP_SEC
+        sleep $SLEEP_SEC
     done
 
-    echo -e "\\nERROR: Only \$WORKERS_READY/$EXPECTED_WORKERS Worker daemons ready. Stopping."
+    echo -e "\\nERROR: Only $WORKERS_READY/$EXPECTED_WORKERS Worker daemons ready. Stopping."
     echo "Cluster status (API):"
     curl -sf "$MASTER_UI/json/" 2>/dev/null \
         | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))" \
@@ -174,6 +174,7 @@ submit_job() {{
       --executor-cores "$EXEC_CORES" \
       --executor-memory "{executor_mem}g" \
       --conf spark.executor.memoryOverhead={executor_overhead_mb}m \
+      --conf spark.driver.maxResultSize={driver_max_result_size_mb}m \
       --conf spark.cores.max="$TOTAL_CORES" \
       --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
       --conf spark.scheduler.minRegisteredResourcesRatio=1.0 \

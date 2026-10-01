@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 
 # Executor off-heap overhead fraction (heap = slice/1.10, overhead = heap * 0.10)
 _EXECUTOR_OVERHEAD_FRACTION = 0.10
+_DRIVER_MAX_RESULT_SIZE_FRACTION = 0.5
 
 # Daemon JVM heaps (exported to SPARK_DAEMON_MEMORY in the sbatch template).
 # Worker daemon is an unbudgeted JVM on every node.
@@ -33,6 +34,7 @@ class SparkResources:
     executor_cores: int
     executor_overhead_mb: int
     executors_per_node: int
+    driver_max_result_size_mb: int
 
     @property
     def daemon_gb(self) -> int:
@@ -51,7 +53,8 @@ class SparkResources:
         )
         logger.info(f"  Spark daemons:      {self.daemon_gb} GB "
                     f"(Master {self.master_gb} + Worker daemon {_WORKER_DAEMON_MEM_GB})")
-        logger.info(f"  Spark Driver:       {self.driver_gb} GB")
+        logger.info(f"  Spark Driver:       {self.driver_gb} GB "
+                    f"(maxResultSize {self.driver_max_result_size_mb} MB)")
         logger.info(f"  Worker pool:        {self.worker_pool_gb} GB")
         logger.info(
             f"  Memory/executor:    {self.executor_gb} GB heap "
@@ -80,14 +83,17 @@ def resources_from_cell(res: dict) -> SparkResources:
     slice_gb = worker_pool_gb / execs
     executor_gb = max(1, int(slice_gb / (1 + _EXECUTOR_OVERHEAD_FRACTION)))
     executor_overhead_mb = int(executor_gb * 1024 * _EXECUTOR_OVERHEAD_FRACTION)
+    driver_gb = int(res["driver_mem_gb"])
+    driver_max_result_size_mb = max(1, int(driver_gb * 1024 * _DRIVER_MAX_RESULT_SIZE_FRACTION))
 
     return SparkResources(
         total_gb=parse_mem_gb(res["mem"]),
         master_gb=_MASTER_MEM_GB,
-        driver_gb=int(res["driver_mem_gb"]),
+        driver_gb=driver_gb,
         worker_pool_gb=worker_pool_gb,
         executor_gb=executor_gb,
         executor_cores=cpus,
         executor_overhead_mb=executor_overhead_mb,
         executors_per_node=execs,
+        driver_max_result_size_mb=driver_max_result_size_mb,
     )

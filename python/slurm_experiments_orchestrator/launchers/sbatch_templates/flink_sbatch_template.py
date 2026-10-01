@@ -76,7 +76,7 @@ write_flink_conf() {{
     # 3. task.off-heap.size: Set to 4GB. Sources (Parquet/Hadoop) allocate per-split direct 
     #    memory; without this, it consumes the 1GB network budget and OOMs.
     # 4. execution.attached: Required for detached EAGER client-side executions (count/collect).
-    
+
     cat <<EOF >> "$FLINK_CONF_DIR/flink-conf.yaml"
 jobmanager.rpc.address: $JM_HOST
 jobmanager.rpc.port: 6123
@@ -92,7 +92,7 @@ taskmanager.memory.network.max: {tm_network_max_mb}m
 taskmanager.memory.task.off-heap.size: 4096m
 jobmanager.memory.process.size: {jm_process_mb}m
 jobmanager.memory.heap.size: {jm_heap_mb}m
-env.java.opts.all: -XX:+UseG1GC
+env.java.opts.all: -XX:+UseG1GC -XX:MaxGCPauseMillis=500 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ParallelRefProcEnabled -Xlog:gc*:file=$FLINK_LOG_DIR/gc-%p.log:time,uptime,level,tags
 parallelism.default: {parallelism}
 io.tmp.dirs: $FLINK_LOCAL_DIRS
 metrics.reporter.file.factory.class: clustering.metrics.FileMetricReporterFactory
@@ -147,13 +147,13 @@ wait_for_taskmanagers() {{
     SLEEP_SEC=2
     MAX_RETRIES=120
 
-    for _i in \$(seq 1 \$MAX_RETRIES); do
-        REGISTERED=\$(curl -sf "http://$JM_HOST:8081/overview" 2>/dev/null \
+    for _i in $(seq 1 $MAX_RETRIES); do
+        REGISTERED=$(curl -sf "http://$JM_HOST:8081/overview" 2>/dev/null \
             | python3 -c "import sys,json; print(json.load(sys.stdin).get('taskmanagers',0))" 2>/dev/null || echo 0)
         
-        if [ "\$REGISTERED" -ge "$TOTAL_TMS" ]; then
-            ELAPSED=\$((_i * SLEEP_SEC))
-            echo " OK (\$REGISTERED/$TOTAL_TMS in \${{ELAPSED}}s)"
+        if [ "$REGISTERED" -ge "$TOTAL_TMS" ]; then
+            ELAPSED=$((_i * SLEEP_SEC))
+            echo " OK ($REGISTERED/$TOTAL_TMS in ${{ELAPSED}}s)"
             break
         fi
         
@@ -164,11 +164,11 @@ wait_for_taskmanagers() {{
         fi
         
         echo -n "."
-        sleep \$SLEEP_SEC
+        sleep $SLEEP_SEC
     done
 
-    if [ "\$REGISTERED" -lt "$TOTAL_TMS" ]; then
-        echo -e "\nWARNING: Only \$REGISTERED/$TOTAL_TMS TaskManagers registered in \$((MAX_RETRIES * SLEEP_SEC))s."
+    if [ "$REGISTERED" -lt "$TOTAL_TMS" ]; then
+        echo -e "\nWARNING: Only $REGISTERED/$TOTAL_TMS TaskManagers registered in $((MAX_RETRIES * SLEEP_SEC))s."
         echo "Leaving the verdict to FlinkClusteringJob.waitForClusterReady. Diagnostics:"
         curl -sf "http://$JM_HOST:8081/overview" 2>/dev/null \
             | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))" \

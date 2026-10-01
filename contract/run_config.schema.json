@@ -39,11 +39,11 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Algorithm name, e.g. 'kmeans' | 'bisectingkmeans' | 'pam' | 'fastpam' | 'fasterpam' | 'clara' | 'alternate' | 'pamae' | 'dbscanpp' | 'dbscanexact'. Resolved by each engine's algorithm registry."
+          "description": "Algorithm name, e.g. 'kmeans' | 'bisectingkmeans' | 'pam' | 'fastpam' | 'fasterpam' | 'clara' | 'alternate' | 'pamae' | 'dbscanpp' | 'dbscanexact' | 'coreset'. Resolved by each engine's algorithm registry."
         },
         "params": {
           "type": "object",
-          "description": "Free-form algorithm params (e.g. k, maxIter, distance, geometry, eps, minPts, coreSampleFraction, sampling, assign, inner, poolSize, refineIters, refine, m0, seed)."
+          "description": "Free-form algorithm params (e.g. k, maxIter, distance, geometry, eps, minPts, coreSampleFraction, sampling, assign, inner, innerSolver, poolSize, refineIters, refine, m, m0, seed)."
         }
       }
     },

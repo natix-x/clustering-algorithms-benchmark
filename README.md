@@ -45,25 +45,25 @@ config:
 flowchart TB
     START_DOT((( ))) --> YAML
     
-    YAML["experiment_configs/&lt;name&gt;.yaml<br>nodes × resources × algorithms × datasets × repetitions"]
-    START["START: slurm_experiments_orchestrator.run_experiments.py --framework {spark|flink} [--submit]"]
+    YAML["config YAML<br>nodes × resources × algorytmy × dane × powtórzenia"]
+    START["run_experiments.py --framework {spark|flink}"]
     
-    InitSpark["inicjalizacja SparkLauncher"]
-    InitFlink["inicjalizacja FlinkLauncher"]
+    InitSpark["SparkLauncher"]
+    InitFlink["FlinkLauncher"]
     
-    V["validate_yaml_config_file(parsed_yaml_config, launcher)<br>walidacja pliku konfiguracyjnego YAML dla konkretnego frameworka"]
-    G["generate_experiments(parsed_yaml_config)<br>iloczyn kartezjański nodes × resources × algorithms × datasets × repetitions → list[Experiment], każdy z unikalnym runId"]
-    JW["inicjalizacja JobWriter(launcher)<br>Deleguje pracę do launchera"]
+    V["walidacja YAML"]
+    G["generate_experiments<br>iloczyn kartezjański osi macierzy → lista eksperymentów"]
+    JW["JobWriter(launcher)"]
     
-    WC["① write_configs(...) → launcher.build_run_config()<br>przygotowuje metadane eksperymentu (zasoby, ścieżki, konfiguracje itp.), Job Writer zapisuje je jako &lt;runId&gt;.json"]
-    WS["② write_sbatch_files(...) → launcher.render_sbatch()<br>wypełnia szablon sbatch metadanymi eksperymentu, zapisuje &lt;runId&gt;.sbatch + submit_all.sh, który pozwoli później uruchomić wszystkie joby na raz"]
+    WC["① write_configs<br>zapisuje &lt;runId&gt;.json"]
+    WS["② write_sbatch_files<br>zapisuje &lt;runId&gt;.sbatch + submit_all.sh"]
     
-    RUN["submit_all.sh → uruchamia sbatch &lt;runId&gt;.sbatch dla każdego eksperymentu"]
-    END_NODE["zwraca gotowe pliki"]
+    RUN["submit_all.sh<br>uruchamia wszystkie zadania"]
+    END_NODE["gotowe pliki"]
 
     YAML --> START
     
-    q1_choice{"--framework = ?"}
+    q1_choice{"--framework?"}
     START --> q1_choice
     q1_choice -- spark --> InitSpark
     q1_choice -- flink --> InitFlink

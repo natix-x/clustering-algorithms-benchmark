@@ -54,6 +54,7 @@ class SparkLauncher(Launcher):
             "executor_overhead_mb": str(spark_resources.executor_overhead_mb),
             "executor_cores": str(spark_resources.executor_cores),
             "driver_mem_gb": str(spark_resources.driver_gb),
+            "driver_max_result_size_mb": str(spark_resources.driver_max_result_size_mb),
             "master_mem_gb": str(spark_resources.master_gb),
             "num_partitions": str(num_partitions),
         }
@@ -105,6 +106,7 @@ class SparkLauncher(Launcher):
             executors_per_node=int(resources["executors_per_node"]),
             worker_mem=spark_resources.worker_pool_gb,
             driver_mem=spark_resources.driver_gb,
+            driver_max_result_size_mb=spark_resources.driver_max_result_size_mb,
             master_mem=spark_resources.master_gb,
             executor_mem=spark_resources.executor_gb,
             executor_cores=spark_resources.executor_cores,
